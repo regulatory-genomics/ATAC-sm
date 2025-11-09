@@ -24,7 +24,6 @@ rule align:
         adapter_sequence = "-a " + config["adapter_sequence"] if config["adapter_sequence"] !="" else " ",
         adapter_fasta = "--adapter_fasta " + config["adapter_fasta"] if config["adapter_fasta"] !="" else " ",
         sequencing_platform = config["sequencing_platform"],
-        sequencing_center = config["sequencing_center"],
         mitochondria_name = config["mitochondria_name"],
         bowtie2_index = config["bowtie2_index"], # The basename of the index for the reference genome excluding the file endings e.g., *.1.bt2
     resources:
@@ -39,7 +38,7 @@ rule align:
         result_path=$(dirname {output.stats})
         find $result_path -type f -name '*.bam.tmp.*' -exec rm {{}} +;
         
-        RG="--rg-id {wildcards.sample} --rg SM:{wildcards.sample} --rg PL:{params.sequencing_platform} --rg CN:{params.sequencing_center}"
+        RG="--rg-id {wildcards.sample} --rg SM:{wildcards.sample} --rg PL:{params.sequencing_platform}"
 
         bowtie2 $RG --very-sensitive --no-discordant -p {threads} --maxins 2000 -x {params.bowtie2_index} \
             --met-file "{output.bowtie_met}" {params.bowtie2_input} 2> "{output.bowtie_log}" | \
@@ -52,36 +51,6 @@ rule align:
 
         samtools view {params.filtering} -o "{output.filtered_bam}" "{output.bam}";
         samtools index "{output.filtered_bam}";
-        """
-
-rule tss_coverage:
-    input:
-        bam = os.path.join(result_path,"results","{sample}","mapped","{sample}.filtered.bam"),
-        bai = os.path.join(result_path,"results","{sample}","mapped","{sample}.filtered.bam.bai"),
-        chromosome_sizes = config["chromosome_sizes"],
-        unique_tss = config["unique_tss"],
-    output:
-        tss_hist = os.path.join(result_path,"results","{sample}","{sample}.tss_histogram.csv"),
-    params:
-        noise_upper = ( config["tss_slop"] * 2 ) - config["noise_lower"],
-        double_slop = ( config["tss_slop"] * 2 ),
-        genome_size = config["genome_size"],
-        tss_slop = config["tss_slop"],
-        noise_lower = config["noise_lower"],
-    resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: 4*config.get("threads", 2)
-    conda:
-        "../envs/pybedtools.yaml",
-    log:
-        "logs/rules/coverage_{sample}.log"
-    shell:
-        """
-        echo "base,count" > {output.tss_hist};
-        bedtools slop -b {params.tss_slop} -i {input.unique_tss} -g {input.chromosome_sizes} | \
-            bedtools coverage -a - -b {input.bam} -d -sorted | \
-            awk '{{if($6 == "+"){{ counts[$7] += $8;}} else counts[{params.double_slop} - $7 + 1] += $8;}} END {{ for(pos in counts) {{ if(pos < {params.noise_lower} || pos > {params.noise_upper}) {{ noise += counts[pos] }} }}; average_noise = noise /(2 * {params.noise_lower}); for(pos in counts) {{print pos-2000-1","(counts[pos]/average_noise) }} }}' | \
-            sort -t "," -k1,1n >> {output.tss_hist} ;
         """
         
 # peak calling with MACS2 & samtools and annotation with HOMER

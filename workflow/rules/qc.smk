@@ -46,3 +46,110 @@ rule trim_galore_pe:
         "logs/trim_galore/{sample}.log"
     wrapper:
         "v7.6.0/bio/trim_galore/pe"
+
+
+rule tss_coverage:
+    input:
+        bam = os.path.join(result_path,"results","{sample}","mapped","{sample}.filtered.bam"),
+        bai = os.path.join(result_path,"results","{sample}","mapped","{sample}.filtered.bam.bai"),
+        chromosome_sizes = config["chromosome_sizes"],
+        unique_tss = config["unique_tss"],
+    output:
+        tss_hist = os.path.join(result_path,"results","{sample}","{sample}.tss_histogram.csv"),
+    params:
+        noise_upper = ( config["tss_slop"] * 2 ) - config["noise_lower"],
+        double_slop = ( config["tss_slop"] * 2 ),
+        genome_size = config["genome_size"],
+        tss_slop = config["tss_slop"],
+        noise_lower = config["noise_lower"],
+    resources:
+        mem_mb=config.get("mem", "16000"),
+    threads: 4*config.get("threads", 2)
+    conda:
+        "../envs/pybedtools.yaml",
+    log:
+        "logs/rules/coverage_{sample}.log"
+    shell:
+        """
+        echo "base,count" > {output.tss_hist};
+        bedtools slop -b {params.tss_slop} -i {input.unique_tss} -g {input.chromosome_sizes} | \
+            bedtools coverage -a - -b {input.bam} -d -sorted | \
+            awk '{{if($6 == "+"){{ counts[$7] += $8;}} else counts[{params.double_slop} - $7 + 1] += $8;}} END {{ for(pos in counts) {{ if(pos < {params.noise_lower} || pos > {params.noise_upper}) {{ noise += counts[pos] }} }}; average_noise = noise /(2 * {params.noise_lower}); for(pos in counts) {{print pos-2000-1","(counts[pos]/average_noise) }} }}' | \
+            sort -t "," -k1,1n >> {output.tss_hist} ;
+        """
+
+
+rule ataqv:
+    input:
+        bam = os.path.join(result_path, "results", "{sample}", "mapped", "{sample}.filtered.bam"),
+        bai = os.path.join(result_path, "results", "{sample}", "mapped", "{sample}.filtered.bam.bai"),
+        peak_file = os.path.join(result_path, "results", "{sample}", "peaks", "{sample}_peaks.narrowPeak"),
+        tss_file = os.path.join(result_path, "genome", "tss.bed"),
+        excl_regs_file = config["blacklisted_regions"],
+        autosom_ref_file = os.path.join(result_path, "genome", "autosomes.txt")
+    output:
+        json = os.path.join(result_path, "results", "{sample}", "{sample}.ataqv.json"),
+        problems = os.path.join(result_path, "results", "{sample}", "{sample}.problems"),
+        versions = os.path.join(result_path, "versions", "ataqv_{sample}.yml")
+    params:
+        organism = config.get("organism", "hg38"),
+        mito_name = config.get("mito_name", config.get("mitochondria_name", "chrM")),
+        args = config.get("ataqv_args", "--ignore-read-groups"),
+        prefix = "{sample}"
+    log:
+        "logs/ataqv/{sample}.log"
+    conda:
+        "/data/litian/micromamba/envs/py311"
+    threads: config.get("ataqv_threads", 4)
+    shell:
+        """
+        ataqv \
+            {params.args} \
+            --mitochondrial-reference-name {params.mito_name} \
+            --peak-file {input.peak_file} \
+            --tss-file {input.tss_file} \
+            --excluded-region-file {input.excl_regs_file} \
+            --autosomal-reference-file {input.autosom_ref_file} \
+            --metrics-file {output.json} \
+            --threads {threads} \
+            --name {params.prefix} \
+            {params.organism} \
+            {input.bam} 2> {log}
+
+        # Create versions file
+        cat <<END_VERSIONS > {output.versions}
+        "ataqv":
+            ataqv: $( ataqv --version )
+        END_VERSIONS
+        """
+
+rule mkarv:
+    input:
+        jsons = expand(os.path.join(result_path, "results", "{sample}", "{sample}.ataqv.json"), sample=samples.keys())
+    output:
+        html = directory(os.path.join(result_path, "ataqv_report")),
+        versions = os.path.join(result_path, "versions", "mkarv.yml")
+    params:
+        args = config.get("mkarv_args", "")
+    log:
+        "logs/mkarv/mkarv.log"
+    conda:
+        "/data/litian/micromamba/envs/py311"
+    threads: config.get("mkarv_threads", 4)
+    shell:
+        """
+        mkdir -p {output.html}
+        mkarv \
+            {params.args} \
+            --concurrency {threads} \
+            --force \
+            {output.html}/ \
+            {input.jsons} 2> {log}
+
+        # Create versions file
+        cat <<END_VERSIONS > {output.versions}
+        "mkarv":
+            ataqv: $( ataqv --version )
+        END_VERSIONS
+        """
+

@@ -1,13 +1,13 @@
 
 ##### RESOURCES #####
-mem: '32000'
+mem: '256000'
 threads: 2
 
 ##### GENERAL #####
 project_name: macrophage_atac # name of the project/dataset
-result_path: /data2/litian/macrophage/results/20251001_atac/ # path to the output folder
-annotation: /data2/litian/macrophage/script/atacseq_pipeline/config/anno_sample.csv # path to annotation file, specified in config/README.md
-
+result_path: /data2/litian/macrophage/process/20251109_atac_test/ # path to the output folder
+#annotation: /data2/litian/macrophage/script/atacseq_pipeline/config/anno_sample.csv # path to annotation file, specified in config/README.md
+annotation: /data2/litian/macrophage/script/atacseq_pipeline/config/annotation.csv
 ##### PROCESSING #####
 
 # genome in the project
@@ -15,7 +15,6 @@ genome: hg38
 
 # bowtie2 parameters PL and CN for read group information (RG)
 sequencing_platform: illumina
-sequencing_center: CeMM_BSF
 
 ##### REPORT #####
 
