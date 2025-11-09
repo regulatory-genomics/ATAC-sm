@@ -1,6 +1,7 @@
 
 def get_units_fastqs(wildcards):
-    u = annot.loc[wildcards.sample]
+    """Get fastq files for a sample_run"""
+    u = annot.loc[wildcards.sample_run]
     return [u["fq1"], u["fq2"]]
 
 def get_quantifications(wildcards):

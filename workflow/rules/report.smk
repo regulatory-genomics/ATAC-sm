@@ -3,9 +3,10 @@ rule symlink_stats:
     input:
         stats_tsv = os.path.join(result_path, 'results', "{sample}", '{sample}.stats.tsv'),
         tss_csv = os.path.join(result_path, 'results', "{sample}", '{sample}.tss_histogram.csv'),
-        mapped_txt = os.path.join(result_path, 'results', "{sample}", 'mapped', '{sample}.txt'),
-        samblaster_log = os.path.join(result_path, 'results', "{sample}", 'mapped', '{sample}.samblaster.log'),
-        flagstat_log = os.path.join(result_path, 'results', "{sample}", 'mapped', '{sample}.samtools_flagstat.log'),
+        # For mapped files, use first run or merged stats
+        mapped_txt = lambda w: os.path.join(result_path, 'results', get_runs_for_sample(w.sample)[0], 'mapped', f'{get_runs_for_sample(w.sample)[0]}.txt') if len(get_runs_for_sample(w.sample)) > 0 else "",
+        samblaster_log = lambda w: os.path.join(result_path, 'results', get_runs_for_sample(w.sample)[0], 'mapped', f'{get_runs_for_sample(w.sample)[0]}.samblaster.log') if len(get_runs_for_sample(w.sample)) > 0 else "",
+        flagstat_log = lambda w: os.path.join(result_path, 'results', get_runs_for_sample(w.sample)[0], 'mapped', f'{get_runs_for_sample(w.sample)[0]}.samtools_flagstat.log') if len(get_runs_for_sample(w.sample)) > 0 else "",
         macs2_log = os.path.join(result_path, 'results', "{sample}", 'peaks', '{sample}.macs2.log'),
         peaks_xls = os.path.join(result_path, 'results', "{sample}", 'peaks', '{sample}_peaks.xls'),
     output:
@@ -37,8 +38,9 @@ rule multiqc:
         expand(os.path.join(result_path,"results","{sample}","mapped", "{sample}.filtered.bam"), sample=samples.keys()),
         expand(os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak"), sample=samples.keys()),
         expand(os.path.join(result_path, 'report', '{sample}_peaks.xls'), sample=samples.keys()), # representing symlinked stats
-        expand(os.path.join(result_path, 'report', '{sample}_fastqc_1.html'), sample=samples.keys()),
-        expand(os.path.join(result_path, 'report', '{sample}_fastqc_2.html'), sample=samples.keys()),
+        # Collect fastqc files from all runs (sample_run format)
+        expand(os.path.join(result_path, 'report', '{sample_run}_fastqc_1.html'), sample_run=annot.index.tolist()),
+        expand(os.path.join(result_path, 'report', '{sample_run}_fastqc_2.html'), sample_run=annot.index.tolist()),
         sample_annotation = config["annotation"],
     output:
         multiqc_report = report(os.path.join(result_path,"report","multiqc_report.html"),

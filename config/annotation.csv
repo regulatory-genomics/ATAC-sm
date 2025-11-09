@@ -1,3 +1,4 @@
-sample_name,read_type,pass_qc,organism,fq1,fq2
-test,paired,0,human,/data2/litian/macrophage/data/ATAC_test/test1_R1.fastq.gz,/data2/litian/macrophage/data/ATAC_test/test1_R2.fastq.gz
-test2,paired,0,human,/data2/litian/macrophage/data/ATAC_test/test1_R1.fastq.gz,/data2/litian/macrophage/data/ATAC_test/test1_R2.fastq.gz
+sample_name,run,read_type,pass_qc,organism,fq1,fq2
+test,run1,paired,0,human,/data2/litian/macrophage/data/ATAC_test/test1_R1.fastq.gz,/data2/litian/macrophage/data/ATAC_test/test1_R2.fastq.gz
+test2,run1,paired,0,human,/data2/litian/macrophage/data/ATAC_test/test1_R1.fastq.gz,/data2/litian/macrophage/data/ATAC_test/test1_R2.fastq.gz
+test,run2,paired,0,human,/data2/litian/macrophage/data/ATAC_test/test1_R1.fastq.gz,/data2/litian/macrophage/data/ATAC_test/test1_R2.fastq.gz

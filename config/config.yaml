@@ -5,9 +5,9 @@ threads: 2
 
 ##### GENERAL #####
 project_name: macrophage_atac # name of the project/dataset
-result_path: /data2/litian/macrophage/process/20251109_atac_test/ # path to the output folder
-#annotation: /data2/litian/macrophage/script/atacseq_pipeline/config/anno_sample.csv # path to annotation file, specified in config/README.md
-annotation: /data2/litian/macrophage/script/atacseq_pipeline/config/annotation.csv
+result_path: /data2/litian/macrophage/process/20251109_atac_run2/ # path to the output folder
+annotation: /data2/litian/macrophage/script/atacseq_pipeline/config/anno_sample.csv # path to annotation file, specified in config/README.md
+#annotation: /data2/litian/macrophage/script/atacseq_pipeline/config/annotation.csv
 ##### PROCESSING #####
 
 # genome in the project
