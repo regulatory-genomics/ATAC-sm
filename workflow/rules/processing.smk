@@ -7,8 +7,8 @@ rule align:
         adapter_fasta = config["adapter_fasta"] if config["adapter_fasta"]!="" else [],
         whitelisted_regions = config["whitelisted_regions"],
     output:
-        bam = os.path.join(result_path,"results","{sample}","mapped", "{sample}.bam"),
-        output_bai =  os.path.join(result_path,"results","{sample}","mapped", "{sample}.bam.bai"),
+        bam = temp(os.path.join(result_path,"results","{sample}","mapped", "{sample}.bam")),
+        output_bai =  temp(os.path.join(result_path,"results","{sample}","mapped", "{sample}.bam.bai")),
         filtered_bam = os.path.join(result_path,"results","{sample}","mapped", "{sample}.filtered.bam"),
         filtered_bai = os.path.join(result_path,"results","{sample}","mapped", "{sample}.filtered.bam.bai"),
         bowtie_log = os.path.join(result_path, 'results', "{sample}", 'mapped', '{sample}.txt'),

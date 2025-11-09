@@ -27,7 +27,7 @@ rule get_autosomes:
     shell:
         """
         # Get autosomes from FAI file
-        python ../scripts/get_autosome.py {input.fai} {output.txt} 2> {log}
+        python {workflow.basedir}/scripts/get_autosome.py {input.fai} {output.txt} 2> {log}
         """
 
 
@@ -45,5 +45,5 @@ rule gtf2tss:
         """
         mkdir -p $(dirname {output.tss})
         # Convert GTF to BED format
-        ../scripts/gtf2tss.pl {input.gtf} > {output.tss} 2> {log}
+        perl {workflow.basedir}/scripts/gtf2tss.pl {input.gtf} > {output.tss} 2> {log}
         """

@@ -37,10 +37,10 @@ rule trim_galore_pe:
     input:
         get_units_fastqs,
     output:
-        fasta_fwd=os.path.join(result_path,"trimmed","{sample}_1.fq.gz"),
-        report_fwd=os.path.join(result_path,"trimmed","{sample}_1._trimming_report.txt"),
-        fasta_rev=os.path.join(result_path,"trimmed","{sample}_2.fq.gz"),
-        report_rev=os.path.join(result_path,"trimmed","{sample}_2._trimming_report.txt"),
+        fasta_fwd=temp(os.path.join(result_path,"trimmed","{sample}_1.fq.gz")),
+        report_fwd=temp(os.path.join(result_path,"trimmed","{sample}_1._trimming_report.txt")),
+        fasta_rev=temp(os.path.join(result_path,"trimmed","{sample}_2.fq.gz")),
+        report_rev=temp(os.path.join(result_path,"trimmed","{sample}_2._trimming_report.txt")),
     threads: 2
     log:
         "logs/trim_galore/{sample}.log"
@@ -88,9 +88,7 @@ rule ataqv:
         excl_regs_file = config["blacklisted_regions"],
         autosom_ref_file = os.path.join(result_path, "genome", "autosomes.txt")
     output:
-        json = os.path.join(result_path, "results", "{sample}", "{sample}.ataqv.json"),
-        problems = os.path.join(result_path, "results", "{sample}", "{sample}.problems"),
-        versions = os.path.join(result_path, "versions", "ataqv_{sample}.yml")
+        json = os.path.join(result_path, "results", "{sample}", "{sample}.ataqv.json")
     params:
         organism = config.get("organism", "hg38"),
         mito_name = config.get("mito_name", config.get("mitochondria_name", "chrM")),
@@ -99,8 +97,8 @@ rule ataqv:
     log:
         "logs/ataqv/{sample}.log"
     conda:
-        "/data/litian/micromamba/envs/py311"
-    threads: config.get("ataqv_threads", 4)
+        "/data2/litian/macrophage/script/atacseq_pipeline/.snakemake/conda/22ecf29b8590ba142cad5ef551bfa62e_"
+    threads: config.get("ataqv_threads", 2)
     shell:
         """
         ataqv \
@@ -115,27 +113,20 @@ rule ataqv:
             --name {params.prefix} \
             {params.organism} \
             {input.bam} 2> {log}
-
-        # Create versions file
-        cat <<END_VERSIONS > {output.versions}
-        "ataqv":
-            ataqv: $( ataqv --version )
-        END_VERSIONS
         """
 
 rule mkarv:
     input:
         jsons = expand(os.path.join(result_path, "results", "{sample}", "{sample}.ataqv.json"), sample=samples.keys())
     output:
-        html = directory(os.path.join(result_path, "ataqv_report")),
-        versions = os.path.join(result_path, "versions", "mkarv.yml")
+        html = directory(os.path.join(result_path, "ataqv_report"))
     params:
         args = config.get("mkarv_args", "")
     log:
         "logs/mkarv/mkarv.log"
     conda:
-        "/data/litian/micromamba/envs/py311"
-    threads: config.get("mkarv_threads", 4)
+        "/data2/litian/macrophage/script/atacseq_pipeline/.snakemake/conda/22ecf29b8590ba142cad5ef551bfa62e_"
+    threads: config.get("mkarv_threads", 2)
     shell:
         """
         mkdir -p {output.html}
@@ -146,10 +137,5 @@ rule mkarv:
             {output.html}/ \
             {input.jsons} 2> {log}
 
-        # Create versions file
-        cat <<END_VERSIONS > {output.versions}
-        "mkarv":
-            ataqv: $( ataqv --version )
-        END_VERSIONS
         """
 
