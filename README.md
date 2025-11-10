@@ -1,13 +1,5 @@
-[![MrBiomics](https://img.shields.io/badge/MrBiomics-red)](https://github.com/epigen/MrBiomics/)
-[![DOI](https://zenodo.org/badge/350342694.svg)](https://zenodo.org/doi/10.5281/zenodo.6323634)
-[![](https://tokei.rs/b1/github/epigen/atacseq_pipeline?category=code)]() 
-[![](https://tokei.rs/b1/github/epigen/atacseq_pipeline?category=files)]()
-[![GitHub license](https://img.shields.io/github/license/epigen/atacseq_pipeline)](https://github.com/epigen/atacseq_pipeline/blob/master/LICENSE)
-![GitHub Release](https://img.shields.io/github/v/release/epigen/atacseq_pipeline)
-[![Snakemake](https://img.shields.io/badge/Snakemake->=8.20.1-green)](https://snakemake.readthedocs.io/en/stable/)
-
 # Ultimate ATAC-seq Data Processing, Quantification & Annotation Pipeline
-A [Snakemake 8](https://snakemake.readthedocs.io/en/stable/) workflow implementation of the [BSF's](https://www.biomedical-sequencing.org/) [ATAC-seq Data Processing Pipeline](https://github.com/berguner/atacseq_pipeline "ATAC-seq Data Processing Pipeline") extended by downstream quantification and annotation steps using Bash and Python.
+A [Snakemake 8](https://snakemake.readthedocs.io/en/stable/) workflow implementation of the [BSF's](https://www.biomedical-sequencing.org/) [ATAC-seq Data Processing Pipeline](https://github.com/berguner/atacseq_pipeline "ATAC-seq Data Processing Pipeline") extended by downstream quantification and annotation steps using Bash and Python. Forked from https://github.com/epigen/atacseq_pipeline.
 
 > [!NOTE]  
 > This workflow adheres to the module specifications of [MrBiomics](https://github.com/epigen/MrBiomics), an effort to augment research by modularizing (biomedical) data science. For more details, instructions, and modules check out the project's repository.
@@ -28,6 +20,7 @@ A [Snakemake 8](https://snakemake.readthedocs.io/en/stable/) workflow implementa
 - [Rob ter Horst](https://github.com/rubbert)
 - [Lina Dobnikar](https://github.com/ld401)
 - [Christoph Bock](https://github.com/chrbock)
+- [Gilbert Han](https://github.com/GilbertHan1011)
 
 # 💿 Software
 This project wouldn't be possible without the following software and their dependencies:
@@ -36,6 +29,7 @@ This project wouldn't be possible without the following software and their depen
 | :------------: | :-----------------------------------------------: |
 | bedtools       | https://doi.org/10.1093/bioinformatics/btq033     |
 | Bowtie2        | https://doi.org/10.1038/nmeth.1923                |
+| bwa-mem2       | https://ieeexplore.ieee.org/document/8820962      |
 | deeptools      | https://doi.org/10.1093/nar/gkw257                |
 | ENCODE         | https://doi.org/10.1038/s41598-019-45839-z        |
 | fastp          | https://doi.org/10.1093/bioinformatics/bty560     |

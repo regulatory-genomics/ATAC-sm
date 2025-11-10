@@ -1,7 +1,3 @@
-# ============================================================================
-# Conditional aligner selection using if-else
-# Only ONE aligner rule will be defined based on config
-# ============================================================================
 
 if config.get("aligner", "bowtie2") == "bowtie2":
     # alignment with bowtie2 & samtools (per run)
@@ -16,24 +12,16 @@ if config.get("aligner", "bowtie2") == "bowtie2":
             sample_run="|".join(annot.index.tolist())  # Only match actual sample_run names from annotation
         output:
             bam = temp(os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.bam")),
-            output_bai =  temp(os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.bam.bai")),
-            filtered_bam = os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.filtered.bam"),
-            filtered_bai = os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.filtered.bam.bai"),
             bowtie_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.txt'),
             bowtie_met = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.bowtie2.met'),
             samblaster_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samblaster.log'),
-            samtools_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samtools.log'),
-            samtools_flagstat_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samtools_flagstat.log'),
-            stats = os.path.join(result_path, 'results', "{sample_run}", '{sample_run}.align.stats.tsv'),
         params:
             sample_name = lambda w: annot.loc[w.sample_run, 'sample_name'],
             bowtie2_input = lambda w, input: f"-1 {input.fasta_fwd} -2 {input.fasta_rev}" if annot.loc[w.sample_run, "read_type"] == "paired" else f"-U {input.fasta_fwd}",
-            filtering = lambda w: "-q 30 -F {flag} -f 2 -L {whitelist}".format(flag=config['SAM_flag'], whitelist=config["whitelisted_regions"]) if annot.loc[w.sample_run, "read_type"] == "paired" else "-q 30 -F {flag} -L {whitelist}".format(flag=config['SAM_flag'], whitelist=config["whitelisted_regions"]),
             add_mate_tags = lambda w: "--addMateTags" if annot.loc[w.sample_run, "read_type"] == "paired" else " ",
             adapter_sequence = "-a " + config["adapter_sequence"] if config["adapter_sequence"] !="" else " ",
             adapter_fasta = "--adapter_fasta " + config["adapter_fasta"] if config["adapter_fasta"] !="" else " ",
             sequencing_platform = config["sequencing_platform"],
-            mitochondria_name = config["mitochondria_name"],
             bowtie2_index = config["bowtie2_index"], # The basename of the index for the reference genome excluding the file endings e.g., *.1.bt2
             bowtie2_local_mode = "--local" if config.get("local", False) else "",  # Add this param for local mode
         resources:
@@ -45,8 +33,8 @@ if config.get("aligner", "bowtie2") == "bowtie2":
             "logs/rules/align_{sample_run}.log"
         shell:
             """
-            mkdir -p $(dirname {output.stats})
-            result_path=$(dirname {output.stats})
+            mkdir -p $(dirname {output.bam})
+            result_path=$(dirname {output.bam})
             find $result_path -type f -name '*.bam.tmp.*' -exec rm {{}} +;
             
             RG="--rg-id {wildcards.sample_run} --rg SM:{params.sample_name} --rg PL:{params.sequencing_platform}"
@@ -55,16 +43,7 @@ if config.get("aligner", "bowtie2") == "bowtie2":
                 {params.bowtie2_local_mode}  \
                 --met-file "{output.bowtie_met}" {params.bowtie2_input} 2> "{output.bowtie_log}" | \
                 samblaster {params.add_mate_tags} 2> "{output.samblaster_log}" | \
-                samtools sort -o "{output.bam}" - 2>> "{output.samtools_log}";
-                
-            
-            samtools index "{output.bam}" 2>> "{output.samtools_log}";
-            samtools idxstats "{output.bam}" | awk '{{ sum += $3 + $4; if($1 == "{params.mitochondria_name}") {{ mito_count = $3; }}}}END{{ print "mitochondrial_fraction\t"mito_count/sum }}' > "{output.stats}";
-            samtools flagstat "{output.bam}" > "{output.samtools_flagstat_log}";
-
-            samtools view {params.filtering} -o "{output.filtered_bam}" "{output.bam}";
-            samtools index "{output.filtered_bam}";
-          
+                samtools sort -o "{output.bam}" - 2>> "{output.bowtie_log}";
             """
 
 elif config.get("aligner", "bowtie2") == "bwa-mem2":
@@ -81,31 +60,8 @@ elif config.get("aligner", "bowtie2") == "bwa-mem2":
             value_str = value
         return f"-T {value_str}"
 
-    def _resolve_bwa_index_prefix():
-        """
-        Resolve the path prefix to pass to bwa/bwa-mem2.
-        If config['bwa_mem2_path'] points directly to a prefix (i.e., *.0123 exists),
-        use it as-is. If it points to a directory, try to join with the genome_fasta
-        stem (basename without extension).
-        """
-        import os
-        idx = config.get("bwa_mem2_path")
-        if not idx or idx in ("", "null"):
-            # fallback to genome_fasta (bwa classic index prefix)
-            return config["genome_fasta"]
-        # If directly a prefix (files exist), use as-is
-        if any(os.path.exists(f"{idx}{ext}") for ext in (".0123", ".amb", ".ann", ".bwt", ".pac", ".sa")):
-            return idx
-        # If a directory, try to derive prefix from genome_fasta stem
-        if os.path.isdir(idx):
-            stem = os.path.splitext(os.path.basename(config["genome_fasta"]))[0]
-            candidate = os.path.join(idx, stem)
-            if any(os.path.exists(f"{candidate}{ext}") for ext in (".0123", ".amb", ".ann", ".bwt", ".pac", ".sa")):
-                return candidate
-        # As a last resort, return provided value (will likely fail fast and inform the user)
-        return idx
+    # Using bwa-mem2 only
 
-    # alignment with BWA MEM & samtools (per run)
     rule align_bwa_mem:
         input:
             fasta_fwd = lambda w: os.path.join(result_path, "trimmed", f"{w.sample_run}_1.fq.gz") if annot.loc[w.sample_run, "read_type"] == "paired" else os.path.join(result_path, "trimmed", f"{w.sample_run}.fq.gz"),
@@ -118,27 +74,18 @@ elif config.get("aligner", "bowtie2") == "bwa-mem2":
             sample_run="|".join(annot.index.tolist())  # Only match actual sample_run names from annotation
         output:
             bam = temp(os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.bam")),
-            output_bai =  temp(os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.bam.bai")),
-            filtered_bam = os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.filtered.bam"),
-            filtered_bai = os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.filtered.bam.bai"),
             bwa_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.bwa.log'),
             samblaster_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samblaster.log'),
-            samtools_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samtools.log'),
-            samtools_flagstat_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samtools_flagstat.log'),
-            stats = os.path.join(result_path, 'results', "{sample_run}", '{sample_run}.align.stats.tsv')
         params:
             sample_name = lambda w: annot.loc[w.sample_run, 'sample_name'],
             bwa_input = lambda w, input: f"{input.fasta_fwd} {input.fasta_rev}" if annot.loc[w.sample_run, "read_type"] == "paired" else f"{input.fasta_fwd}",
-            filtering = lambda w: "-q 30 -F {flag} -f 2 -L {whitelist}".format(flag=config['SAM_flag'], whitelist=config["whitelisted_regions"]) if annot.loc[w.sample_run, "read_type"] == "paired" else "-q 30 -F {flag} -L {whitelist}".format(flag=config['SAM_flag'], whitelist=config["whitelisted_regions"]),
             add_mate_tags = lambda w: "--addMateTags" if annot.loc[w.sample_run, "read_type"] == "paired" else " ",
             sequencing_platform = config["sequencing_platform"],
-            mitochondria_name = config["mitochondria_name"],
             bwa_args = config.get("bwa_args", ""),
             bwa_min_score_flag = _sanitize_bwa_min_score_flag(),
             bwa_m_flag = "-M",  # Mark shorter split hits as secondary
-            bwa_mem2_index_path = config.get("bwa_mem2_path"),
             # Use bwa-mem2 index path if set, otherwise use genome_fasta (for bwa)
-            bwa_index_path = lambda w: _resolve_bwa_index_prefix(),
+            bwa_index_path = lambda w: (config.get("bwa_mem2_path") if config.get("bwa_mem2_path") not in ("", "null", None) else config["genome_fasta"]),
         resources:
             mem_mb=config.get("mem", "64000"),
         threads: 4*config.get("threads", 2)
@@ -148,22 +95,15 @@ elif config.get("aligner", "bowtie2") == "bwa-mem2":
             "logs/rules/align_bwa_mem_{sample_run}.log"
         shell:
             """
-            mkdir -p $(dirname {output.stats})
-            result_path=$(dirname {output.stats})
+            mkdir -p $(dirname {output.bam})
+            result_path=$(dirname {output.bam})
             find $result_path -type f -name '*.bam.tmp.*' -exec rm {{}} +;
             
             RG="@RG\\tID:{wildcards.sample_run}\\tSM:{params.sample_name}\\tPL:{params.sequencing_platform}"
 
             BWA_INDEX_PATH="{params.bwa_index_path}"
-            
-            # Determine which BWA binary to use based on bwa_mem2_path
-            if [ -n "{params.bwa_mem2_index_path}" ] && [ "{params.bwa_mem2_index_path}" != "null" ] && [ "{params.bwa_mem2_index_path}" != "" ]; then
-                BWA_BINARY="bwa-mem2"
-            else
-                BWA_BINARY="bwa"
-            fi
 
-            $BWA_BINARY mem \
+            bwa-mem2 mem \
                 {params.bwa_args} \
                 {params.bwa_m_flag} \
                 {params.bwa_min_score_flag} \
@@ -172,34 +112,54 @@ elif config.get("aligner", "bowtie2") == "bwa-mem2":
                 $BWA_INDEX_PATH \
                 {params.bwa_input} 2> {output.bwa_log} | \
                 samblaster {params.add_mate_tags} 2> {output.samblaster_log} | \
-                samtools view -bhS -F 0x0100 -O BAM - 2>> {output.samtools_log} | \
-                samtools sort -o {output.bam} - 2>> {output.samtools_log};
-                
-            samtools index "{output.bam}" 2>> "{output.samtools_log}";
-            samtools idxstats "{output.bam}" | awk '{{ sum += $3 + $4; if($1 == "{params.mitochondria_name}") {{ mito_count = $3; }}}}END{{ print "mitochondrial_fraction\\t"mito_count/sum }}' > "{output.stats}";
-            samtools flagstat "{output.bam}" > "{output.samtools_flagstat_log}";
-
-            samtools view {params.filtering} -o "{output.filtered_bam}" "{output.bam}";
-            samtools index "{output.filtered_bam}";
+                samtools view -bhS -F 0x0100 -O BAM - 2>> {output.bwa_log} | \
+                samtools sort -o {output.bam} - 2>> {output.bwa_log};
             """
 
 else:
     raise ValueError(f"Unknown aligner: {config.get('aligner', 'bowtie2')}. Must be 'bowtie2' or 'bwa-mem2'")
 
-rule bwa_index:
+rule bwa_mem2_index:
     input:
         fasta = config["genome_fasta"]
     output:
-        index = multiext(config["genome_fasta"], ".amb", ".ann", ".bwt", ".pac", ".sa", ".0123", ".alt"),
+        index = multiext(config["genome_fasta"], ".amb", ".ann", ".pac", ".bwt.2bit.64", ".0123"),
     log:
-        "logs/bwa_index/bwa_index.log"
+        "logs/bwa_mem2_index/bwa_mem2_index.log"
     conda:
-        "../envs/bwa_mem.yaml"
+        "../envs/bwa.yaml"
     shell:
         """
         # Create BWA index
-        bwa index {input.fasta} 2> {log}
+        bwa-mem2 index {input.fasta} 2> {log}
         """
+
+rule samtools_process:
+    input:
+        bam = os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.bam"),
+    output:
+        filtered_bam = os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.filtered.bam"),
+        filtered_bai = os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.filtered.bam.bai"),
+        samtools_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samtools.log'),
+        samtools_flagstat_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samtools_flagstat.log'),
+        stats = os.path.join(result_path, 'results', "{sample_run}", '{sample_run}.align.stats.tsv'),
+    params:
+        filtering = lambda w: "-q 30 -F {flag} -f 2 -L {whitelist}".format(flag=config['SAM_flag'], whitelist=config["whitelisted_regions"]) if annot.loc[w.sample_run, "read_type"] == "paired" else "-q 30 -F {flag} -L {whitelist}".format(flag=config['SAM_flag'], whitelist=config["whitelisted_regions"]),
+        mitochondria_name = config["mitochondria_name"],
+    resources:
+        mem_mb=config.get("mem", "16000"),
+    threads: config.get("threads", 1)
+    conda:
+        "../envs/bowtie2.yaml",
+    shell:
+        '''
+            samtools index "{input.bam}" 2>> "{output.samtools_log}";
+            samtools idxstats "{input.bam}" | awk '{{ sum += $3 + $4; if($1 == "{params.mitochondria_name}") {{ mito_count = $3; }}}}END{{ print "mitochondrial_fraction\t"mito_count/sum }}' > "{output.stats}";
+            samtools flagstat "{input.bam}" > "{output.samtools_flagstat_log}";
+
+            samtools view {params.filtering} -o "{output.filtered_bam}" "{input.bam}";
+            samtools index "{output.filtered_bam}";
+        '''
 
 # Merge BAM files for samples with multiple runs
 # Note: This rule only matches actual sample names (not sample_run names)
