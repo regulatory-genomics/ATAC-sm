@@ -29,6 +29,7 @@ rule align:
         sequencing_platform = config["sequencing_platform"],
         mitochondria_name = config["mitochondria_name"],
         bowtie2_index = config["bowtie2_index"], # The basename of the index for the reference genome excluding the file endings e.g., *.1.bt2
+        bowtie2_local_mode = "--local" if config.get("local", False) else "",  # Add this param for local mode
     resources:
         mem_mb=config.get("mem", "16000"),
     threads: 4*config.get("threads", 2)
@@ -45,9 +46,11 @@ rule align:
         RG="--rg-id {wildcards.sample_run} --rg SM:{params.sample_name} --rg PL:{params.sequencing_platform}"
 
         bowtie2 $RG --very-sensitive --no-discordant -p {threads} --maxins 2000 -x {params.bowtie2_index} \
+            {params.bowtie2_local_mode}  \
             --met-file "{output.bowtie_met}" {params.bowtie2_input} 2> "{output.bowtie_log}" | \
             samblaster {params.add_mate_tags} 2> "{output.samblaster_log}" | \
             samtools sort -o "{output.bam}" - 2>> "{output.samtools_log}";
+            
         
         samtools index "{output.bam}" 2>> "{output.samtools_log}";
         samtools idxstats "{output.bam}" | awk '{{ sum += $3 + $4; if($1 == "{params.mitochondria_name}") {{ mito_count = $3; }}}}END{{ print "mitochondrial_fraction\t"mito_count/sum }}' > "{output.stats}";

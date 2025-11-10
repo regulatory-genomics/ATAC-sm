@@ -15,6 +15,7 @@ genome: hg38
 
 # bowtie2 parameters PL and CN for read group information (RG)
 sequencing_platform: illumina
+local: true # whether to use local or end-to-end mode
 
 ##### REPORT #####
 
