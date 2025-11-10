@@ -9,6 +9,11 @@ result_path: /data2/litian/macrophage/process/20251109_atac_run2/ # path to the 
 #result_path: /data2/litian/macrophage/process/20251109_atac_test_bowtie/
 annotation: /data2/litian/macrophage/script/atacseq_pipeline/config/anno_sample.csv # path to annotation file, specified in config/README.md
 #annotation: /data2/litian/macrophage/script/atacseq_pipeline/config/annotation.csv
+
+##### prealignment #####
+prealignments:
+  - name: chrM
+    index: /data2/litian/database/bwa/hg38_rcrds/rcrds
 ##### PROCESSING #####
 
 # genome in the project
@@ -16,6 +21,12 @@ genome: hg38
 
 # Alignment method: "bowtie2" or "bwa-mem2"
 aligner: bwa-mem2  # choose alignment method: "bowtie2" or "bwa-mem2"
+
+prealign_enabled: false  # set false to skip optional pre-alignment step
+# Optional prealignment references (run in order); leave empty list to skip even if enabled
+prealignments:
+   - name: chrM
+     index: /path/to/chrM/index/prefix
 
 # bowtie2 parameters PL and CN for read group information (RG)
 sequencing_platform: illumina

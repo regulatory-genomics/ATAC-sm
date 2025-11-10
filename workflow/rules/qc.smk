@@ -50,8 +50,8 @@ rule trim_galore_pe:
 
 rule tss_coverage:
     input:
-        bam = os.path.join(result_path,"results","{sample}","mapped","{sample}.filtered.bam"),
-        bai = os.path.join(result_path,"results","{sample}","mapped","{sample}.filtered.bam.bai"),
+        bam = os.path.join(result_path,"bam","{sample}","{sample}.filtered.bam"),
+        bai = os.path.join(result_path,"bam","{sample}","{sample}.filtered.bam.bai"),
         chromosome_sizes = config["chromosome_sizes"],
         unique_tss = config["unique_tss"],
     output:
@@ -81,8 +81,8 @@ rule tss_coverage:
 
 rule ataqv:
     input:
-        bam = os.path.join(result_path, "results", "{sample}", "mapped", "{sample}.filtered.bam"),
-        bai = os.path.join(result_path, "results", "{sample}", "mapped", "{sample}.filtered.bam.bai"),
+        bam = os.path.join(result_path, "bam", "{sample}", "{sample}.filtered.bam"),
+        bai = os.path.join(result_path, "bam", "{sample}", "{sample}.filtered.bam.bai"),
         peak_file = os.path.join(result_path, "results", "{sample}", "peaks", "{sample}_peaks.narrowPeak"),
         tss_file = os.path.join(result_path, "genome", "tss.bed"),
         excl_regs_file = config["blacklisted_regions"],

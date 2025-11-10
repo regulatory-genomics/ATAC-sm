@@ -45,7 +45,7 @@ rule symlink_stats:
 
 rule multiqc:
     input:
-        expand(os.path.join(result_path,"results","{sample}","mapped", "{sample}.filtered.bam"), sample=samples.keys()),
+        expand(os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam"), sample=samples.keys()),
         expand(os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak"), sample=samples.keys()),
         expand(os.path.join(result_path, 'report', '{sample}_peaks.xls'), sample=samples.keys()), # representing symlinked stats
         # Collect fastqc files from all runs (sample_run format)
