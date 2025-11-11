@@ -64,7 +64,7 @@ rule tss_coverage:
         noise_lower = config["noise_lower"],
     resources:
         mem_mb=config.get("mem", "16000"),
-    threads: 4*config.get("threads", 2)
+    threads: config.get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
     log:

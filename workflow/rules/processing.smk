@@ -476,7 +476,7 @@ rule peak_calling:
         keep_dup = config['macs2_keep_dup'],
     resources:
         mem_mb=config.get("mem", "16000"),
-    threads: 4*config.get("threads", 2)
+    threads: config.get("threads", 2)
     conda:
         "../envs/macs2_homer.yaml",
     log:
@@ -519,5 +519,5 @@ rule aggregate_stats:
         "logs/rules/aggregate_stats_{sample}.log"
     shell:
         """
-        cat {input.align_stats} {input.peak_stats} > {output}
+        cat {input.peak_stats} > {output}
         """
