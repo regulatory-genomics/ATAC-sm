@@ -3,6 +3,33 @@ aligner = config.get("aligner", "bowtie2")
 _ALIGNER_LOG_SUFFIX = "txt" if aligner == "bowtie2" else "bwa.log"
 
 
+rule collect_align_stats:
+    input:
+        expand(os.path.join(result_path, 'results', '{sample_run}', '{sample_run}.align.stats.tsv'), 
+               sample_run=annot.index.tolist())
+    output:
+        report_tsv = os.path.join(result_path, 'report', 'align_stats_report.tsv')
+    resources:
+        mem_mb=config.get("mem", "1000"),
+    threads: config.get("threads", 1)
+    log:
+        os.path.join("logs", "rules", "collect_align_stats.log")
+    shell:
+        """
+        echo -e "sample_run\\tmetric\\tvalue" > {output.report_tsv}
+        for stats_file in {input}; do
+            if [ -f "$stats_file" ] && [ -s "$stats_file" ]; then
+                sample_run=$(basename "$stats_file" .align.stats.tsv)
+                while IFS=$'\\t' read -r metric value || [ -n "$metric" ]; do
+                    # Skip empty lines
+                    [ -z "$metric" ] && continue
+                    echo -e "$sample_run\\t$metric\\t$value" >> {output.report_tsv}
+                done < "$stats_file"
+            fi
+        done
+        """
+
+
 rule symlink_stats:
     input:
         stats_tsv = os.path.join(result_path, 'results', "{sample}", '{sample}.stats.tsv'),
