@@ -506,7 +506,30 @@ rule peak_calling:
             touch {output.homer_knownResults}
         fi
         """
-        
+
+rule merge_peaks:
+    input:
+        peak_calls = expand(
+            os.path.join(result_path, "results", "{sample}", "peaks", "{sample}_peaks.narrowPeak"),
+            sample=list(samples.keys()),
+        )
+    output:
+        os.path.join(result_path, "summary", "peaks", "merged_peaks.bed"),
+    threads:
+        config.get("threads", 1)
+    params:
+        chrom_sizes = config["chromosome_sizes"],
+    log:
+        "logs/rules/merge_peaks.log"
+    shell:
+        """
+        mkdir -p $(dirname {output})
+        workflow/scripts/merge_peaks --chrom-sizes {params.chrom_sizes} \
+            --half-width 250 \
+            --output {output} \
+            {input.peak_calls}
+        """
+
 rule aggregate_stats:
     input:
         peak_stats = os.path.join(result_path, 'results', "{sample}", '{sample}.peak.stats.tsv'),

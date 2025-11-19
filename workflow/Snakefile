@@ -76,6 +76,7 @@ rule all:
         envs = expand(os.path.join(result_path,'envs','{env}.yaml'),env=envs),
         configs = os.path.join(result_path,'configs','{}_config.yaml'.format(config["project_name"])),
         annotations = os.path.join(result_path,'configs','{}_annot.csv'.format(config["project_name"])),
+        merged_peaks = os.path.join(result_path,"summary","peaks","merged_peaks.bed"),
     resources:
         mem_mb=config.get("mem", "8000"),
     threads: config.get("threads", 1)

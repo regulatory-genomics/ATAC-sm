@@ -30,28 +30,41 @@ rule collect_align_stats:
         """
 
 
+rule symlink_run_stats:
+    input:
+        align_stats = os.path.join(result_path, 'results', "{sample_run}", '{sample_run}.align.stats.tsv'),
+        mapped_log = lambda w: os.path.join(result_path, 'results', w.sample_run, 'mapped', f'{w.sample_run}.{_ALIGNER_LOG_SUFFIX}'),
+        samblaster_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samblaster.log'),
+        flagstat_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samtools_flagstat.log'),
+    wildcard_constraints:
+        sample_run="|".join(annot.index.tolist())
+    output:
+        align_stats = os.path.join(result_path, 'report', '{sample_run}.align.stats.tsv'),
+        mapped_log = os.path.join(result_path, 'report', '{sample_run}.' + _ALIGNER_LOG_SUFFIX),
+        samblaster_log = os.path.join(result_path, 'report', '{sample_run}.samblaster.log'),
+        flagstat_log = os.path.join(result_path, 'report', '{sample_run}.samtools_flagstat.log'),
+    resources:
+        mem_mb=config.get("mem", "1000"),
+    threads: config.get("threads", 1)
+    log:
+        os.path.join("logs", "rules", "symlink_run_stats_{sample_run}.log")
+    shell:
+        """
+        ln -sfn $(realpath --relative-to=$(dirname {output.align_stats}) {input.align_stats}) {output.align_stats}
+        ln -sfn $(realpath --relative-to=$(dirname {output.mapped_log}) {input.mapped_log}) {output.mapped_log}
+        ln -sfn $(realpath --relative-to=$(dirname {output.samblaster_log}) {input.samblaster_log}) {output.samblaster_log}
+        ln -sfn $(realpath --relative-to=$(dirname {output.flagstat_log}) {input.flagstat_log}) {output.flagstat_log}
+        """
+
 rule symlink_stats:
     input:
         stats_tsv = os.path.join(result_path, 'results', "{sample}", '{sample}.stats.tsv'),
         tss_csv = os.path.join(result_path, 'results', "{sample}", '{sample}.tss_histogram.csv'),
-        # For mapped files, use first run or merged stats
-        mapped_log = lambda w: os.path.join(
-            result_path,
-            'results',
-            get_runs_for_sample(w.sample)[0],
-            'mapped',
-            f'{get_runs_for_sample(w.sample)[0]}.{_ALIGNER_LOG_SUFFIX}'
-        ) if len(get_runs_for_sample(w.sample)) > 0 else "",
-        samblaster_log = lambda w: os.path.join(result_path, 'results', get_runs_for_sample(w.sample)[0], 'mapped', f'{get_runs_for_sample(w.sample)[0]}.samblaster.log') if len(get_runs_for_sample(w.sample)) > 0 else "",
-        flagstat_log = lambda w: os.path.join(result_path, 'results', get_runs_for_sample(w.sample)[0], 'mapped', f'{get_runs_for_sample(w.sample)[0]}.samtools_flagstat.log') if len(get_runs_for_sample(w.sample)) > 0 else "",
         macs2_log = os.path.join(result_path, 'results', "{sample}", 'peaks', '{sample}.macs2.log'),
         peaks_xls = os.path.join(result_path, 'results', "{sample}", 'peaks', '{sample}_peaks.xls'),
     output:
         stats_tsv = os.path.join(result_path, 'report', '{sample}.stats.tsv'),
         tss_csv = os.path.join(result_path, 'report', '{sample}_TSS.csv'),
-        mapped_log = os.path.join(result_path, 'report', '{sample}.' + _ALIGNER_LOG_SUFFIX),
-        samblaster_log = os.path.join(result_path, 'report', '{sample}.samblaster.log'),
-        flagstat_log = os.path.join(result_path, 'report', '{sample}.samtools_flagstat.log'),
         macs2_log = os.path.join(result_path, 'report', '{sample}.macs2.log'),
         peaks_xls = os.path.join(result_path, 'report', '{sample}_peaks.xls'),
     resources:
@@ -63,9 +76,6 @@ rule symlink_stats:
         """
         ln -sfn $(realpath --relative-to=$(dirname {output.stats_tsv}) {input.stats_tsv}) {output.stats_tsv}
         ln -sfn $(realpath --relative-to=$(dirname {output.tss_csv}) {input.tss_csv}) {output.tss_csv}
-        ln -sfn $(realpath --relative-to=$(dirname {output.mapped_log}) {input.mapped_log}) {output.mapped_log}
-        ln -sfn $(realpath --relative-to=$(dirname {output.samblaster_log}) {input.samblaster_log}) {output.samblaster_log}
-        ln -sfn $(realpath --relative-to=$(dirname {output.flagstat_log}) {input.flagstat_log}) {output.flagstat_log}
         ln -sfn $(realpath --relative-to=$(dirname {output.macs2_log}) {input.macs2_log}) {output.macs2_log}
         ln -sfn $(realpath --relative-to=$(dirname {output.peaks_xls}) {input.peaks_xls}) {output.peaks_xls}
         """
@@ -78,6 +88,11 @@ rule multiqc:
         # Collect fastqc files from all runs (sample_run format)
         expand(os.path.join(result_path, 'report', '{sample_run}_fastqc_1.html'), sample_run=annot.index.tolist()),
         expand(os.path.join(result_path, 'report', '{sample_run}_fastqc_2.html'), sample_run=annot.index.tolist()),
+        # Collect per-run stats and logs for MultiQC
+        expand(os.path.join(result_path, 'report', '{sample_run}.align.stats.tsv'), sample_run=annot.index.tolist()),
+        expand(os.path.join(result_path, 'report', '{sample_run}.' + _ALIGNER_LOG_SUFFIX), sample_run=annot.index.tolist()),
+        expand(os.path.join(result_path, 'report', '{sample_run}.samblaster.log'), sample_run=annot.index.tolist()),
+        expand(os.path.join(result_path, 'report', '{sample_run}.samtools_flagstat.log'), sample_run=annot.index.tolist()),
         sample_annotation = config["annotation"],
     output:
         multiqc_report = report(os.path.join(result_path,"report","multiqc_report.html"),
