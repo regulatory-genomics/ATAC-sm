@@ -1,42 +1,45 @@
 $schema: "http://json-schema.org/draft-06/schema#"
 
-description: sample sheeet schema
+description: sample sheet schema
+type: object
 properties:
   sample_name:
     type: string
-    description: unique sample name / identifier. Sample or Sample_batch
-    pattern: "^[^_]*_?[^_]*$" # No more then one underscore. 
+    description: "unique sample name / identifier. Sample or Sample_batch"
+    pattern: "^[^_]*_?[^_]*$"  # No more than one underscore.
   run:
     type: integer
-    description: lane number
+    description: "lane number"
     minimum: 1
   R1:
     type: string
-    description: path to the the read1 fastq file
-    pattern: "(^|.*\/)[^/]*R1[^/]*\.(gz|zst)$" # contains R1, gz/zst
+    description: "path to the the read1 fastq file"
+    pattern: "(^|.*/)[^/]*R1[^/]*\\.(gz|zst)$"  # contains R1, gz/zst
   R2:
     type: string
-    description: path to the the read2 fastq file
-    pattern: "(^|.*\/)[^/]*R2[^/]*\.(gz|zst)$"
+    description: "path to the the read2 fastq file"
+    pattern: "(^|.*/)[^/]*R2[^/]*\\.(gz|zst)$"
   organism:
     type: string
-    description: species
+    description: "species"
   sample:
     type: string
-    description: sample names
+    description: "sample names"
   batch:
     type: string
-    description: batch info
+    description: "batch info"
   tissue:
     type: string
-    description: Tissue location
+    description: "Tissue location"
   stage:
     type: string
-    description: Timepoint
+    description: "Timepoint"
   read_type:
     type: string
-    description : paired or not 
-    enum: ["paired", "single"]
+    description: "paired or not"
+    enum:
+      - paired
+      - single
 
 required:
   - sample_name

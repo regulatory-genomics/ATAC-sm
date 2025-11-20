@@ -11,7 +11,7 @@ rule sample_annotation:
     log:
         "logs/rules/sample_annotation.log"
     run:
-        annot_df = pd.read_csv(input.multiqc_stats, delimiter='\t', index_col=0).loc[samples_quantify,:]
+        annot_df = pd.read_csv(input.multiqc_stats, delimiter='\t', index_col=0).loc[samples,:]
         annot_df.columns = [col.split("mqc-generalstats-")[1].replace("the_atac_seq_pipeline-", "").replace('-', '_') for col in annot_df.columns]
         annot_df.index.names = ['sample_name']
         annot_df.to_csv(output.sample_annot)
@@ -41,7 +41,7 @@ rule get_promoter_regions:
 # generate consensus regions using (py)bedtools
 rule get_consensus_regions:
     input:
-        summits_bed = expand(os.path.join(result_path,"results","{sample}","peaks","{sample}_summits.bed"), sample=samples_quantify),
+        summits_bed = expand(os.path.join(result_path,"results","{sample}","peaks","{sample}_summits.bed"), sample=samples.keys()),
         blacklisted_regions = config["refs"]["blacklist"],
         chromosome_sizes = config["refs"]["chrom_sizes"],
     output:
@@ -82,7 +82,7 @@ rule quantify_support_sample:
 rule quantify_counts_sample:
     input:
         regions = os.path.join(result_path,"counts","{kind}_regions.bed"),
-        bamfile = os.path.join(result_path,"results","{sample}","mapped", "{sample}.filtered.bam"),
+        bamfile = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam"),
         chromosome_sizes = config["refs"]["chrom_sizes"],
     output:
         quant_counts = os.path.join(result_path,"results","{sample}","mapped", "{sample}_quantification_{kind}_counts.csv"),
@@ -117,7 +117,7 @@ rule quantify_aggregate:
 # aggregate HOMER motif enrichment results for all QC'd samples into one CSV
 rule homer_aggregate:
     input:
-        expand(os.path.join(result_path,"results","{sample}","homer","knownResults.txt"), sample=samples_quantify),
+        expand(os.path.join(result_path,"results","{sample}","homer","knownResults.txt"), sample=samples.keys()),
     output:
         os.path.join(result_path,"counts","HOMER_knownMotifs.csv"),
     resources:

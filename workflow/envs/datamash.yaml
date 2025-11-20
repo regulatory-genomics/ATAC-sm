@@ -3,6 +3,4 @@ channels:
   - bioconda
   - nodefaults
 dependencies:
-  - numpy=2.0.1
-  - pandas=2.2.2
-  - peppy=0.40.8
+  - datamash=1.8
