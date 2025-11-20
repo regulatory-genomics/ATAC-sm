@@ -5,10 +5,10 @@ rule install_homer:
     params:
         homer_dir = HOMER_path,
         homer_url = "http://homer.ucsd.edu/homer/configureHomer.pl",
-        genome = config["genome"],
+        genome = config["project"]["genome"],
     resources:
-        mem_mb=config.get("mem", "8000"),
-    threads: config.get("threads", 1)
+        mem_mb=config["resources"].get("mem_mb", 8000),
+    threads: config["resources"].get("threads", 1)
     conda:
         "../envs/macs2_homer.yaml",
     log:

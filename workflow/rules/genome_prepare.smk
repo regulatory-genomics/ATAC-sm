@@ -1,7 +1,7 @@
 
 rule get_genome_fai:
     input:
-        genome_fasta = config["genome_fasta"]
+        genome_fasta = config["refs"]["fasta"]
     output:
         fai = os.path.join(result_path, "genome", "genome.fai")
     log:
@@ -34,7 +34,7 @@ rule get_autosomes:
 
 rule gtf2tss:
     input:
-        gtf = config.get("gtf", config.get("gencode_gtf", ""))
+        gtf = config.get("gtf", config["refs"].get("gencode_gtf", ""))
     output:
         tss = os.path.join(result_path, "genome", "tss.bed"),
     log:

@@ -52,19 +52,19 @@ rule tss_coverage:
     input:
         bam = os.path.join(result_path,"bam","{sample}","{sample}.filtered.bam"),
         bai = os.path.join(result_path,"bam","{sample}","{sample}.filtered.bam.bai"),
-        chromosome_sizes = config["chromosome_sizes"],
-        unique_tss = config["unique_tss"],
+        chromosome_sizes = config["refs"]["chrom_sizes"],
+        unique_tss = config["refs"]["unique_tss"],
     output:
         tss_hist = os.path.join(result_path,"results","{sample}","{sample}.tss_histogram.csv"),
     params:
-        noise_upper = ( config["tss_slop"] * 2 ) - config["noise_lower"],
-        double_slop = ( config["tss_slop"] * 2 ),
-        genome_size = config["genome_size"],
-        tss_slop = config["tss_slop"],
-        noise_lower = config["noise_lower"],
+        noise_upper = ( config["filtering"]["tss_slop"] * 2 ) - config["filtering"]["noise_lower"],
+        double_slop = ( config["filtering"]["tss_slop"] * 2 ),
+        genome_size = config["refs"]["genome_size_bp"],
+        tss_slop = config["filtering"]["tss_slop"],
+        noise_lower = config["filtering"]["noise_lower"],
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
     log:
@@ -85,13 +85,13 @@ rule ataqv:
         bai = os.path.join(result_path, "bam", "{sample}", "{sample}.filtered.bam.bai"),
         peak_file = os.path.join(result_path, "results", "{sample}", "peaks", "{sample}_peaks.narrowPeak"),
         tss_file = os.path.join(result_path, "genome", "tss.bed"),
-        excl_regs_file = config["blacklisted_regions"],
+        excl_regs_file = config["refs"]["blacklist"],
         autosom_ref_file = os.path.join(result_path, "genome", "autosomes.txt")
     output:
         json = os.path.join(result_path, "results", "{sample}", "{sample}.ataqv.json")
     params:
-        organism = config.get("organism", "hg38"),
-        mito_name = config.get("mito_name", config.get("mitochondria_name", "chrM")),
+        organism = config["project"].get("genome", "hg38"),
+        mito_name = config["refs"].get("mito_name", "chrM"),
         args = config.get("ataqv_args", "--ignore-read-groups"),
         prefix = "{sample}"
     log:

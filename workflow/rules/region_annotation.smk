@@ -4,21 +4,21 @@
 rule uropa_prepare:
     input:
         consensus_regions = os.path.join(result_path,"counts","consensus_regions.bed"),
-        gencode_template = workflow.source_path(config["gencode_template"]),
-        regulatory_template = workflow.source_path(config["regulatory_template"]),
-        gencode_gtf = config["gencode_gtf"],
-        regulatory_build_gtf = config["regulatory_build_gtf"],
+        gencode_template = workflow.source_path(config["annotation"]["templates"]["gencode"]),
+        regulatory_template = workflow.source_path(config["annotation"]["templates"]["regulatory"]),
+        gencode_gtf = config["refs"]["gencode_gtf"],
+        regulatory_build_gtf = config["refs"]["regulatory_gtf"],
     output:
         gencode_config = os.path.join(result_path,"tmp","consensus_regions_gencode.json"),
         reg_config = os.path.join(result_path,"tmp","consensus_regions_reg.json"),
     params:
-        tss_size = config['tss_size'],
-        proximal_size_up = config["proximal_size_up"],
-        proximal_size_dn = config["proximal_size_dn"],
-        distal_size = config['distal_size'],
+        tss_size = config["annotation"]["tss_size"],
+        proximal_size_up = config["annotation"]["promoter"]["up"],
+        proximal_size_dn = config["annotation"]["promoter"]["down"],
+        distal_size = config["annotation"]["distal_size"],
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
     log:
         "logs/rules/uropa_prepare.log"
     run:
@@ -60,8 +60,8 @@ rule uropa_gencode:
     params:
         results_dir = os.path.join(result_path,"tmp"),
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: 4*config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: 4*config["resources"].get("threads", 2)
     conda:
         "../envs/uropa.yaml",
     log:
@@ -81,8 +81,8 @@ rule uropa_reg:
     params:
         results_dir = os.path.join(result_path,"tmp"),
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: 4*config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: 4*config["resources"].get("threads", 2)
     conda:
         "../envs/uropa.yaml",
     log:
@@ -102,10 +102,10 @@ rule homer_region_annotation:
         homer_annotations_log = os.path.join(result_path,"tmp","homer_annotations.tsv.log"),
     params:
         homer_bin = os.path.join(HOMER_path,"bin"),
-        genome = config["genome"],
+        genome = config["project"]["genome"],
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
     conda:
         "../envs/macs2_homer.yaml",
     log:
@@ -123,12 +123,12 @@ rule homer_region_annotation:
 rule bedtools_annotation:
     input:
         consensus_regions = os.path.join(result_path,"counts","consensus_regions.bed"),
-        genome_fasta = config["genome_fasta"],
+        genome_fasta = config["refs"]["fasta"],
     output:
         bedtools_annotation = os.path.join(result_path, "tmp", "bedtools_annotation.bed"),
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
     log:
@@ -148,8 +148,8 @@ rule region_annotation_aggregate:
     output:
         region_annotation = os.path.join(result_path,'counts',"consensus_annotation.csv"),
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
     log:
         "logs/rules/region_annotation_aggregate.log"
     run:

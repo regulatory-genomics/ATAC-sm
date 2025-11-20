@@ -4,9 +4,9 @@ rule env_export:
         report(os.path.join(result_path,'envs','{env}.yaml'),
                       caption="../report/software.rst", 
                       category="Software", 
-                      subcategory="{}_{}".format(config["project_name"], module_name),
+                      subcategory="{}_{}".format(config["project"]["name"], module_name),
                        labels={
-                                    "name": config["project_name"],
+                                    "name": config["project"]["name"],
                                     "module": module_name,
                                    "env": "{env}",
                                 }
@@ -14,8 +14,8 @@ rule env_export:
     conda:
         "../envs/{env}.yaml"
     resources:
-        mem_mb=config.get("mem", "1000"),
-    threads: config.get("threads", 1)
+        mem_mb=config["resources"]["mem_mb"],
+    threads: config["resources"]["threads"]
     log:
         os.path.join("logs","rules","env_{env}.log"),
     shell:
@@ -26,19 +26,19 @@ rule env_export:
 # export and add configuration file to report        
 rule config_export:
     output:
-        configs = report(os.path.join(result_path,'configs','{}_config.yaml'.format(config["project_name"])), 
+        configs = report(os.path.join(result_path,'configs','{}_config.yaml'.format(config["project"]["name"])), 
                          caption="../report/configs.rst", 
                          category="Configuration", 
-                         subcategory="{}_{}".format(config["project_name"], module_name),
+                         subcategory="{}_{}".format(config["project"]["name"], module_name),
                          labels={
-                                    "name": config["project_name"],
+                                    "name": config["project"]["name"],
                                     "module": module_name,
                                      "type": "config"
                                 }
                         )
     resources:
-        mem_mb=config.get("mem", "1000"),
-    threads: config.get("threads", 1)
+        mem_mb=config["resources"]["mem_mb"],
+    threads: config["resources"]["threads"]
     log:
         os.path.join("logs","rules","config_export.log"),
     run:
@@ -48,21 +48,21 @@ rule config_export:
 # export and add used annotation file(s) to report
 rule annot_export:
     input:
-        config["annotation"],
+        config["project"]["samples"],
     output:
-        annot = report(os.path.join(result_path,'configs','{}_annot.csv'.format(config["project_name"])), 
+        annot = report(os.path.join(result_path,'configs','{}_annot.csv'.format(config["project"]["name"])), 
                          caption="../report/configs.rst", 
                          category="Configuration", 
-                         subcategory="{}_{}".format(config["project_name"], module_name),
+                         subcategory="{}_{}".format(config["project"]["name"], module_name),
                        labels={
-                                    "name": config["project_name"],
+                                    "name": config["project"]["name"],
                                     "module": module_name,
                                    "type": "annotation",
                                 }
                         )
     resources:
         mem_mb=1000,
-    threads: config.get("threads", 1)
+    threads: config["resources"]["threads"]
     log:
         os.path.join("logs","rules","annot_export.log"),
     shell:

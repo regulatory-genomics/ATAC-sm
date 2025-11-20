@@ -1,3 +1,8 @@
+# Get runs per sample for merging
+def get_runs_for_sample(sample_name):
+    """Get all runs for a given sample name"""
+    sample_runs = annot[annot['sample_name'] == sample_name].index.tolist()
+    return sample_runs if len(sample_runs) > 0 else []
 
 def get_units_fastqs(wildcards):
     """Get fastq files for a sample_run"""

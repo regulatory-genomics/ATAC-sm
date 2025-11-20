@@ -1,6 +1,7 @@
 
 ##### global workflow dependencies #####
-# conda: "envs/global.yaml"
+conda: "envs/global.yaml"
+#== setup ======================
 
 # libraries
 import yaml
@@ -10,44 +11,43 @@ import shutil
 from snakemake.utils import validate, min_version
 from string import Template
 
-module_name = "atacseq_pipeline"
-
 ##### set minimum snakemake version #####
 min_version("8.20.1")
 
-##### setup report #####
+module_name = "atacseq_pipeline"
 report: os.path.join("report", "workflow.rst")
-    
 # list of names of the used environment specifications in workflow/envs/{env_name}.yaml
-envs = ["bowtie2","macs2_homer","multiqc","pybedtools","uropa","datamash","ggplot"]
+envs = ["macs2_homer","multiqc","pybedtools","uropa","ggplot","ataqv"]
 
-##### load config and sample annotation sheets #####
+# load config and sample annotation sheets #####
 configfile: os.path.join("config","config.yaml")
 
 # load sample/unit annotation
-annot = pd.read_csv(config["annotation"])
-# Handle both old format (no run column) and new format (with run column)
-if 'run' not in annot.columns:
-    annot['run'] = 'run1'
+annot = pd.read_csv(config["project"]["samples"])
+validate(annot, schema="../schemas/samples.schema.yaml")
 
 # Create a unique identifier for each run: sample_name_run
 annot['sample_run'] = annot['sample_name'].astype(str) + '_' + annot['run'].astype(str)
+
+duplicates = samples[samples.duplicated(subset=['sample_run'], keep=False)]
+
+if not duplicates.empty:
+    sys.stderr.write("\nError: Duplicate (sample_name + run) pairs found in sample sheet!\n")
+    sys.stderr.write("The following rows are not unique:\n")
+    sys.stderr.write(str(duplicates['sample_run']) + "\n\n")
+    sys.exit(1)
+
 annot = annot.set_index('sample_run')
 
-samples_quantify = annot[annot['pass_qc'] > 0]['sample_name'].unique().tolist()
+if 'read_type' not in annot.columns:
+    annot['read_type'] = config["project"]["read_type"]
 
 # Get unique sample names (for downstream analysis)
 samples = annot.reset_index().drop_duplicates(subset='sample_name', keep='first').set_index("sample_name").to_dict(orient="index")
 
-# Get runs per sample for merging
-def get_runs_for_sample(sample_name):
-    """Get all runs for a given sample name"""
-    sample_runs = annot[annot['sample_name'] == sample_name].index.tolist()
-    return sample_runs if len(sample_runs) > 0 else []
-
 ##### set global variables
-result_path = os.path.join(config["result_path"], module_name)
-HOMER_path = os.path.abspath(os.path.join("resources", config["project_name"], "HOMER"))
+result_path = os.path.join(config["project"]["out_dir"], module_name)
+HOMER_path = os.path.abspath(os.path.join("resources", config["project"]["name"], "HOMER"))
 
 # to deal with rule ambiguity concerning final outputs in counts/
 ruleorder: sample_annotation > quantify_aggregate
@@ -74,12 +74,12 @@ rule all:
         align_stats_report = os.path.join(result_path, "report", "align_stats_report.tsv"),
         # EXPORT environments and configurations
         envs = expand(os.path.join(result_path,'envs','{env}.yaml'),env=envs),
-        configs = os.path.join(result_path,'configs','{}_config.yaml'.format(config["project_name"])),
-        annotations = os.path.join(result_path,'configs','{}_annot.csv'.format(config["project_name"])),
+        configs = os.path.join(result_path,'configs','{}_config.yaml'.format(config["project"]["name"])),
+        annotations = os.path.join(result_path,'configs','{}_annot.csv'.format(config["project"]["name"])),
         merged_peaks = os.path.join(result_path,"summary","peaks","merged_peaks.bed"),
     resources:
-        mem_mb=config.get("mem", "8000"),
-    threads: config.get("threads", 1)
+        mem_mb=config["resources"]["mem_mb"],
+    threads: config["resources"]["threads"]
     log:
         os.path.join("logs","rules","all.log")
 

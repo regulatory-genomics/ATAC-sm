@@ -24,8 +24,8 @@ tss_annot_path = snakemake.output["tss_annot"]
 tss_bed_path = snakemake.output["tss_bed"]
 
 # parameters
-TSS_up = -snakemake.config["proximal_size_up"]
-TSS_dn = snakemake.config["proximal_size_dn"]
+TSS_up = -snakemake.config["annotation"]["promoter"]["up"]
+TSS_dn = snakemake.config["annotation"]["promoter"]["down"]
 
 # load annotations and consensus counts
 annot_regions = pd.read_csv(region_annotation_path)

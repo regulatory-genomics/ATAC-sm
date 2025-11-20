@@ -6,8 +6,8 @@ rule sample_annotation:
     output:
         sample_annot = os.path.join(result_path, "counts", "sample_annotation.csv"),
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
     log:
         "logs/rules/sample_annotation.log"
     run:
@@ -19,18 +19,18 @@ rule sample_annotation:
 # generate promoter regions using (py)bedtools
 rule get_promoter_regions:
     input:
-        gencode_gtf = config["gencode_gtf"],
-        chromosome_sizes = config["chromosome_sizes"],
-        genome_fasta = config["genome_fasta"],
+        gencode_gtf = config["refs"]["gencode_gtf"],
+        chromosome_sizes = config["refs"]["chrom_sizes"],
+        genome_fasta = config["refs"]["fasta"],
     output:
         promoter_regions = os.path.join(result_path,"counts","promoter_regions.bed"),
         promoter_annot = os.path.join(result_path,"counts","promoter_annotation.csv"),
     params:
-        proximal_size_up = config["proximal_size_up"],
-        proximal_size_dn = config["proximal_size_dn"],
+        proximal_size_up = config["annotation"]["promoter"]["up"],
+        proximal_size_dn = config["annotation"]["promoter"]["down"],
     resources:
-        mem_mb = config.get("mem", "16000"),
-    threads: config.get("threads", 2)
+        mem_mb = config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
     log:
@@ -42,15 +42,15 @@ rule get_promoter_regions:
 rule get_consensus_regions:
     input:
         summits_bed = expand(os.path.join(result_path,"results","{sample}","peaks","{sample}_summits.bed"), sample=samples_quantify),
-        blacklisted_regions = config["blacklisted_regions"],
-        chromosome_sizes = config["chromosome_sizes"],
+        blacklisted_regions = config["refs"]["blacklist"],
+        chromosome_sizes = config["refs"]["chrom_sizes"],
     output:
         consensus_regions = os.path.join(result_path,"counts","consensus_regions.bed"),
     params:
-        slop_extension = config["slop_extension"],
+        slop_extension = config["peaks"]["slop_extension"],
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
     log:
@@ -63,14 +63,14 @@ rule quantify_support_sample:
     input:
         consensus_regions = os.path.join(result_path,"counts","consensus_regions.bed"),
         peakfile = os.path.join(result_path,"results","{sample}","peaks", "{sample}_summits.bed"),
-        chromosome_sizes = config["chromosome_sizes"],
+        chromosome_sizes = config["refs"]["chrom_sizes"],
     output:
         quant_support = os.path.join(result_path,"results","{sample}","peaks", "{sample}_quantification_support_counts.csv"),
     params:
-        slop_extension = config["slop_extension"],
+        slop_extension = config["peaks"]["slop_extension"],
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
     log:
@@ -83,12 +83,12 @@ rule quantify_counts_sample:
     input:
         regions = os.path.join(result_path,"counts","{kind}_regions.bed"),
         bamfile = os.path.join(result_path,"results","{sample}","mapped", "{sample}.filtered.bam"),
-        chromosome_sizes = config["chromosome_sizes"],
+        chromosome_sizes = config["refs"]["chrom_sizes"],
     output:
         quant_counts = os.path.join(result_path,"results","{sample}","mapped", "{sample}_quantification_{kind}_counts.csv"),
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
     log:
@@ -103,8 +103,8 @@ rule quantify_aggregate:
     output:
         os.path.join(result_path,"counts","{kind}_counts.csv"),
     resources:
-        mem_mb=config.get("mem", "32000"),
-    threads: 2*config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 32000),
+    threads: 2*config["resources"].get("threads", 2)
     conda:
         "../envs/datamash.yaml",
     log:
@@ -121,8 +121,8 @@ rule homer_aggregate:
     output:
         os.path.join(result_path,"counts","HOMER_knownMotifs.csv"),
     resources:
-        mem_mb=config.get("mem", "32000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 32000),
+    threads: config["resources"].get("threads", 2)
     log:
         "logs/rules/homer_aggregate.log"
     run:
@@ -159,8 +159,8 @@ rule map_consensus_tss:
         tss_annot = os.path.join(result_path,"counts","TSS_annotation.csv"),
         tss_bed = os.path.join(result_path,"counts","TSS_regions.bed"),
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
     log:

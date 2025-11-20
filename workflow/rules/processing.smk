@@ -1,5 +1,5 @@
-prealign_enabled = config.get("prealign_enabled", True)
-prealignments = config.get("prealignments", []) or []
+prealign_enabled = config["alignment"].get("prealign", {}).get("enabled", True)
+prealignments = config["alignment"].get("prealign", {}).get("indices", []) or []
 has_prealignments = prealign_enabled and len(prealignments) > 0
 
 
@@ -43,14 +43,14 @@ if has_prealignments:
             stats = os.path.join(result_path, "results", "{sample_run}", "prealign", "{sample_run}.prealign.stats.tsv"),
         params:
             prealignments = prealignments,
-            aligner = config.get("aligner", "bowtie2"),
+            aligner = config["alignment"].get("tool", "bowtie2"),
             prealign_dir = lambda w: os.path.join(result_path, "results", w.sample_run, "prealign"),
             is_paired = lambda w: annot.loc[w.sample_run, "read_type"] == "paired",
         resources:
-            mem_mb = config.get("mem", "16000"),
-        threads: config.get("threads", 2)
+            mem_mb = config["resources"].get("mem_mb", 16000),
+        threads: config["resources"].get("threads", 2)
         conda:
-            "../envs/bwa.yaml" if config.get("aligner", "bowtie2") == "bwa-mem2" else "../envs/bowtie2.yaml"
+            "../envs/bwa.yaml" if config["alignment"].get("tool", "bowtie2") == "bwa-mem2" else "../envs/bowtie2.yaml"
         log:
             "logs/rules/prealign_{sample_run}.log"
         run:
@@ -235,15 +235,15 @@ if has_prealignments:
                 stats_fh.write(f"total\t{total_before}\t{total_after}\t{total_filtered}\t{total_percent:.6f}\n")
 
 
-if config.get("aligner", "bowtie2") == "bowtie2":
+if config["alignment"].get("tool", "bowtie2") == "bowtie2":
     # alignment with bowtie2 & samtools (per run)
     rule align_bowtie2:
         input:
             fasta_fwd = lambda w: (_prealigned_fastq_paths(w.sample_run)[0] if has_prealignments else _trimmed_fastq_paths(w.sample_run)[0]),
             fasta_rev = lambda w: (_prealigned_fastq_paths(w.sample_run)[1] if has_prealignments else _trimmed_fastq_paths(w.sample_run)[1]),
-            bowtie2_index = os.path.dirname(config["bowtie2_index"]),
-            adapter_fasta = config["adapter_fasta"] if config["adapter_fasta"]!="" else [],
-            whitelisted_regions = config["whitelisted_regions"],
+            bowtie2_index = os.path.dirname(config["alignment"]["bowtie2"]["index"]),
+            adapter_fasta = config["adapters"]["fasta"] if config["adapters"]["fasta"]!="" else [],
+            whitelisted_regions = config["refs"]["whitelist"],
         wildcard_constraints:
             sample_run="|".join(annot.index.tolist())  # Only match actual sample_run names from annotation
         output:
@@ -255,14 +255,14 @@ if config.get("aligner", "bowtie2") == "bowtie2":
             sample_name = lambda w: annot.loc[w.sample_run, 'sample_name'],
             bowtie2_input = lambda w, input: f"-1 {input.fasta_fwd} -2 {input.fasta_rev}" if annot.loc[w.sample_run, "read_type"] == "paired" else f"-U {input.fasta_fwd}",
             add_mate_tags = lambda w: "--addMateTags" if annot.loc[w.sample_run, "read_type"] == "paired" else " ",
-            adapter_sequence = "-a " + config["adapter_sequence"] if config["adapter_sequence"] !="" else " ",
-            adapter_fasta = "--adapter_fasta " + config["adapter_fasta"] if config["adapter_fasta"] !="" else " ",
-            sequencing_platform = config["sequencing_platform"],
-            bowtie2_index = config["bowtie2_index"], # The basename of the index for the reference genome excluding the file endings e.g., *.1.bt2
-            bowtie2_local_mode = "--local" if config.get("local", False) else "",  # Add this param for local mode
+            adapter_sequence = "-a " + config["adapters"]["sequence"] if config["adapters"]["sequence"] !="" else " ",
+            adapter_fasta = "--adapter_fasta " + config["adapters"]["fasta"] if config["adapters"]["fasta"] !="" else " ",
+            sequencing_platform = config["alignment"]["sequencing_platform"],
+            bowtie2_index = config["alignment"]["bowtie2"]["index"], # The basename of the index for the reference genome excluding the file endings e.g., *.1.bt2
+            bowtie2_local_mode = "--local" if config["alignment"].get("local_mode", False) else "",  # Add this param for local mode
         resources:
-            mem_mb=config.get("mem", "16000"),
-        threads: 4*config.get("threads", 2)
+            mem_mb=config["resources"].get("mem_mb", 16000),
+        threads: 4*config["resources"].get("threads", 2)
         conda:
             "../envs/bowtie2.yaml",
         log:
@@ -282,9 +282,9 @@ if config.get("aligner", "bowtie2") == "bowtie2":
                 samtools sort -o "{output.bam}" - 2>> "{output.bowtie_log}";
             """
 
-elif config.get("aligner", "bowtie2") == "bwa-mem2":
+elif config["alignment"].get("tool", "bowtie2") == "bwa-mem2":
     def _sanitize_bwa_min_score_flag():
-        value = config.get("bwa_min_score")
+        value = config["alignment"]["bwa"].get("min_score")
         if value is None:
             return ""
         if isinstance(value, str):
@@ -302,10 +302,9 @@ elif config.get("aligner", "bowtie2") == "bwa-mem2":
         input:
             fasta_fwd = lambda w: (_prealigned_fastq_paths(w.sample_run)[0] if has_prealignments else _trimmed_fastq_paths(w.sample_run)[0]),
             fasta_rev = lambda w: (_prealigned_fastq_paths(w.sample_run)[1] if has_prealignments else _trimmed_fastq_paths(w.sample_run)[1]),
-            # If bwa_mem2_path is set, use BWA-MEM2 index directory (pre-indexed)
-            # If bwa_mem2_path is not set, require bwa_index rule to create index files
-            index = lambda w: multiext(config["genome_fasta"], ".amb", ".ann", ".bwt", ".pac", ".sa", ".0123", ".alt") if not config.get("bwa_mem2_path") or config.get("bwa_mem2_path") == "null" or config.get("bwa_mem2_path") == "" else [],
-            whitelisted_regions = config["whitelisted_regions"],
+            # If a custom BWA-MEM2 index is set, use it, otherwise rely on generated genome index files
+            index = lambda w: multiext(config["refs"]["fasta"], ".amb", ".ann", ".bwt", ".pac", ".sa", ".0123", ".alt") if not config["alignment"]["bwa"].get("index") or config["alignment"]["bwa"].get("index") in ("", "null", None) else [],
+            whitelisted_regions = config["refs"]["whitelist"],
         wildcard_constraints:
             sample_run="|".join(annot.index.tolist())  # Only match actual sample_run names from annotation
         output:
@@ -316,15 +315,15 @@ elif config.get("aligner", "bowtie2") == "bwa-mem2":
             sample_name = lambda w: annot.loc[w.sample_run, 'sample_name'],
             bwa_input = lambda w, input: f"{input.fasta_fwd} {input.fasta_rev}" if annot.loc[w.sample_run, "read_type"] == "paired" else f"{input.fasta_fwd}",
             add_mate_tags = lambda w: "--addMateTags" if annot.loc[w.sample_run, "read_type"] == "paired" else " ",
-            sequencing_platform = config["sequencing_platform"],
-            bwa_args = config.get("bwa_args", ""),
+            sequencing_platform = config["alignment"]["sequencing_platform"],
+            bwa_args = config["alignment"]["bwa"].get("extra_args", ""),
             bwa_min_score_flag = _sanitize_bwa_min_score_flag(),
             bwa_m_flag = "-M",  # Mark shorter split hits as secondary
             # Use bwa-mem2 index path if set, otherwise use genome_fasta (for bwa)
-            bwa_index_path = lambda w: (config.get("bwa_mem2_path") if config.get("bwa_mem2_path") not in ("", "null", None) else config["genome_fasta"]),
+            bwa_index_path = lambda w: (config["alignment"]["bwa"].get("index") if config["alignment"]["bwa"].get("index") not in ("", "null", None) else config["refs"]["fasta"]),
         resources:
-            mem_mb=config.get("mem", "64000"),
-        threads: 4*config.get("threads", 2)
+            mem_mb=config["resources"].get("mem_mb", 64000),
+        threads: 4*config["resources"].get("threads", 2)
         conda:
             "../envs/bwa.yaml",
         log:
@@ -353,13 +352,13 @@ elif config.get("aligner", "bowtie2") == "bwa-mem2":
             """
 
 else:
-    raise ValueError(f"Unknown aligner: {config.get('aligner', 'bowtie2')}. Must be 'bowtie2' or 'bwa-mem2'")
+    raise ValueError(f"Unknown aligner: {config['alignment'].get('tool', 'bowtie2')}. Must be 'bowtie2' or 'bwa-mem2'")
 
 rule bwa_mem2_index:
     input:
-        fasta = config["genome_fasta"]
+        fasta = config["refs"]["fasta"]
     output:
-        index = multiext(config["genome_fasta"], ".amb", ".ann", ".pac", ".bwt.2bit.64", ".0123"),
+        index = multiext(config["refs"]["fasta"], ".amb", ".ann", ".pac", ".bwt.2bit.64", ".0123"),
     log:
         "logs/bwa_mem2_index/bwa_mem2_index.log"
     conda:
@@ -380,11 +379,17 @@ rule samtools_process:
         samtools_flagstat_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samtools_flagstat.log'),
         stats = os.path.join(result_path, 'results', "{sample_run}", '{sample_run}.align.stats.tsv'),
     params:
-        filtering = lambda w: "-q 30 -F {flag} -f 2 -L {whitelist}".format(flag=config['SAM_flag'], whitelist=config["whitelisted_regions"]) if annot.loc[w.sample_run, "read_type"] == "paired" else "-q 30 -F {flag} -L {whitelist}".format(flag=config['SAM_flag'], whitelist=config["whitelisted_regions"]),
-        mitochondria_name = config["mitochondria_name"],
+        filtering = lambda w: "-q 30 -F {flag} -f 2 -L {whitelist}".format(
+            flag=config["filtering"]["sam_flag"],
+            whitelist=config["refs"]["whitelist"],
+        ) if annot.loc[w.sample_run, "read_type"] == "paired" else "-q 30 -F {flag} -L {whitelist}".format(
+            flag=config["filtering"]["sam_flag"],
+            whitelist=config["refs"]["whitelist"],
+        ),
+        mitochondria_name = config["refs"].get("mito_name", "chrM"),
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: config.get("threads", 1)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 1)
     conda:
         "../envs/bowtie2.yaml",
     shell:
@@ -424,8 +429,8 @@ rule merge_bam:
         # Only match if this is a valid sample name (check happens in input function)
         is_valid_sample = lambda w: w.sample in samples,
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
     conda:
         "../envs/bowtie2.yaml",
     log:
@@ -455,7 +460,7 @@ rule peak_calling:
         bam = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam"),
         bai = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam.bai"),
         homer_script = os.path.join(HOMER_path,"configureHomer.pl"),
-        regulatory_regions = config["regulatory_regions"],
+        regulatory_regions = config["refs"]["regulatory_regions"],
     output:
         peak_calls = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak"),
         peak_annot = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak.annotated.tsv"),
@@ -471,12 +476,12 @@ rule peak_calling:
         homer_dir = os.path.join(result_path,"results","{sample}","homer"),
         homer_bin = os.path.join(HOMER_path,"bin"),
         formating = lambda w: '--format BAMPE' if samples["{}".format(w.sample)]["read_type"] == "paired" else '--format BAM',
-        genome_size = config["genome_size"],
-        genome = config["genome"],
-        keep_dup = config['macs2_keep_dup'],
+        genome_size = config["refs"]["genome_size_bp"],
+        genome = config["project"]["genome"],
+        keep_dup = config["peaks"]["macs2_keep_dup"],
     resources:
-        mem_mb=config.get("mem", "16000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
     conda:
         "../envs/macs2_homer.yaml",
     log:
@@ -516,9 +521,9 @@ rule merge_peaks:
     output:
         os.path.join(result_path, "summary", "peaks", "merged_peaks.bed"),
     threads:
-        config.get("threads", 1)
+        config["resources"].get("threads", 1)
     params:
-        chrom_sizes = config["chromosome_sizes"],
+        chrom_sizes = config["refs"]["chrom_sizes"],
     log:
         "logs/rules/merge_peaks.log"
     shell:
@@ -536,8 +541,8 @@ rule aggregate_stats:
     output:
         os.path.join(result_path, 'results', "{sample}", '{sample}.stats.tsv'),
     resources:
-        mem_mb=config.get("mem", "1000"),
-    threads: config.get("threads", 2)
+        mem_mb=config["resources"].get("mem_mb", 1000),
+    threads: config["resources"].get("threads", 2)
     log:
         "logs/rules/aggregate_stats_{sample}.log"
     shell:
