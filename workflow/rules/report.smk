@@ -5,8 +5,8 @@ _ALIGNER_LOG_SUFFIX = "txt" if aligner == "bowtie2" else "bwa.log"
 
 rule collect_align_stats:
     input:
-        expand(os.path.join(result_path, 'results', '{sample_run}', '{sample_run}.align.stats.tsv'), 
-               sample_run=annot.index.tolist())
+        expand(os.path.join(result_path, 'results', '{sample}', '{sample}.align.stats.tsv'), 
+               sample=samples.keys())
     output:
         report_tsv = os.path.join(result_path, 'report', 'align_stats_report.tsv')
     resources:
@@ -16,38 +16,38 @@ rule collect_align_stats:
         os.path.join("logs", "rules", "collect_align_stats.log")
     shell:
         """
-        echo -e "sample_run\\tmetric\\tvalue" > {output.report_tsv}
+        echo -e "sample\\tmetric\\tvalue" > {output.report_tsv}
         for stats_file in {input}; do
             if [ -f "$stats_file" ] && [ -s "$stats_file" ]; then
-                sample_run=$(basename "$stats_file" .align.stats.tsv)
+                sample=$(basename "$stats_file" .align.stats.tsv)
                 while IFS=$'\\t' read -r metric value || [ -n "$metric" ]; do
                     # Skip empty lines
                     [ -z "$metric" ] && continue
-                    echo -e "$sample_run\\t$metric\\t$value" >> {output.report_tsv}
+                    echo -e "$sample\\t$metric\\t$value" >> {output.report_tsv}
                 done < "$stats_file"
             fi
         done
         """
 
 
-rule symlink_run_stats:
+rule symlink_sample_stats:
     input:
-        align_stats = os.path.join(result_path, 'results', "{sample_run}", '{sample_run}.align.stats.tsv'),
-        mapped_log = lambda w: os.path.join(result_path, 'results', w.sample_run, 'mapped', f'{w.sample_run}.{_ALIGNER_LOG_SUFFIX}'),
-        samblaster_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samblaster.log'),
-        flagstat_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samtools_flagstat.log'),
+        align_stats = os.path.join(result_path, 'results', "{sample}", '{sample}.align.stats.tsv'),
+        mapped_log = os.path.join(result_path, 'bam', "{sample}", f'{sample}.{_ALIGNER_LOG_SUFFIX}'),
+        samblaster_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samblaster.log'),
+        flagstat_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samtools_flagstat.log'),
     wildcard_constraints:
-        sample_run="|".join(annot.index.tolist())
+        sample="|".join(samples.keys())
     output:
-        align_stats = os.path.join(result_path, 'report', '{sample_run}.align.stats.tsv'),
-        mapped_log = os.path.join(result_path, 'report', '{sample_run}.' + _ALIGNER_LOG_SUFFIX),
-        samblaster_log = os.path.join(result_path, 'report', '{sample_run}.samblaster.log'),
-        flagstat_log = os.path.join(result_path, 'report', '{sample_run}.samtools_flagstat.log'),
+        align_stats = os.path.join(result_path, 'report', '{sample}.align.stats.tsv'),
+        mapped_log = os.path.join(result_path, 'report', '{sample}.' + _ALIGNER_LOG_SUFFIX),
+        samblaster_log = os.path.join(result_path, 'report', '{sample}.samblaster.log'),
+        flagstat_log = os.path.join(result_path, 'report', '{sample}.samtools_flagstat.log'),
     resources:
         mem_mb=config["resources"].get("mem_mb", 1000),
     threads: config["resources"].get("threads", 1)
     log:
-        os.path.join("logs", "rules", "symlink_run_stats_{sample_run}.log")
+        os.path.join("logs", "rules", "symlink_sample_stats_{sample}.log")
     shell:
         """
         ln -sfn $(realpath --relative-to=$(dirname {output.align_stats}) {input.align_stats}) {output.align_stats}
@@ -88,12 +88,12 @@ rule multiqc:
         # Collect fastqc files from all runs (sample_run format)
         expand(os.path.join(result_path, 'report', '{sample_run}_fastqc_1.html'), sample_run=annot.index.tolist()),
         expand(os.path.join(result_path, 'report', '{sample_run}_fastqc_2.html'), sample_run=annot.index.tolist()),
-        # Collect per-run stats and logs for MultiQC
-        expand(os.path.join(result_path, 'report', '{sample_run}.align.stats.tsv'), sample_run=annot.index.tolist()),
-        expand(os.path.join(result_path, 'report', '{sample_run}.' + _ALIGNER_LOG_SUFFIX), sample_run=annot.index.tolist()),
-        expand(os.path.join(result_path, 'report', '{sample_run}.samblaster.log'), sample_run=annot.index.tolist()),
-        expand(os.path.join(result_path, 'report', '{sample_run}.samtools_flagstat.log'), sample_run=annot.index.tolist()),
-        sample_annotation = config["project"]["samples"],
+        # Collect per-sample stats and logs for MultiQC
+        expand(os.path.join(result_path, 'report', '{sample}.align.stats.tsv'), sample=samples.keys()),
+        expand(os.path.join(result_path, 'report', '{sample}.' + _ALIGNER_LOG_SUFFIX), sample=samples.keys()),
+        expand(os.path.join(result_path, 'report', '{sample}.samblaster.log'), sample=samples.keys()),
+        expand(os.path.join(result_path, 'report', '{sample}.samtools_flagstat.log'), sample=samples.keys()),
+        sample_annotation = annotation_sheet_path,
     output:
         multiqc_report = report(os.path.join(result_path,"report","multiqc_report.html"),
                                 caption="../report/multiqc.rst",
@@ -106,7 +106,7 @@ rule multiqc:
         multiqc_stats = os.path.join(result_path, "report", "multiqc_report_data", "multiqc_general_stats.txt"),
     params:
         result_path = result_path,
-        multiqc_configs = "{{'title': '{name}', 'intro_text': 'Quality Control Metrics of the ATAC-seq pipeline.', 'annotation': '{annot}', 'genome': '{genome}', 'exploratory_columns': {exploratory_columns}, 'skip_versions_section': true,'custom_content': {custom_content}}}".format(name = config["project"]["name"], annot = config["project"]["samples"], genome = config["project"]["genome"], exploratory_columns = config["project"].get("annot_columns", "[]"), custom_content = config.get("custom_content", "")),
+        multiqc_configs = "{{'title': '{name}', 'intro_text': 'Quality Control Metrics of the ATAC-seq pipeline.', 'annotation': '{annot}', 'genome': '{genome}', 'exploratory_columns': {exploratory_columns}, 'skip_versions_section': true,'custom_content': {custom_content}}}".format(name = config["project"]["name"], annot = annotation_sheet_path, genome = config["project"]["genome"], exploratory_columns = config["project"].get("annot_columns", "[]"), custom_content = config.get("custom_content", "")),
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
     threads: config["resources"].get("threads", 2)
@@ -122,7 +122,7 @@ rule multiqc:
 # visualize sample annotation (including QC metrics)
 rule plot_sample_annotation:
     input:
-        sample_annotation = config["project"]["samples"],
+        sample_annotation = annotation_sheet_path,
         sample_annotation_w_QC = os.path.join(result_path, "counts", "sample_annotation.csv"),
     output:
         sample_annotation_plot = os.path.join(result_path,"report","sample_annotation.png"),

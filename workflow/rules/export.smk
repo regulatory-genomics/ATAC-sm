@@ -48,7 +48,7 @@ rule config_export:
 # export and add used annotation file(s) to report
 rule annot_export:
     input:
-        config["project"]["samples"],
+        annotation_sheet_path,
     output:
         annot = report(os.path.join(result_path,'configs','{}_annot.csv'.format(config["project"]["name"])), 
                          caption="../report/configs.rst", 

@@ -13,6 +13,21 @@ def get_units_fastqs(wildcards):
         fq2 = None
     return [fq1, fq2]
 
+def get_all_fastqs_for_sample(sample_name):
+    """Get all R1 and R2 fastq files for a sample (all runs combined)"""
+    sample_runs = get_runs_for_sample(sample_name)
+    r1_files = []
+    r2_files = []
+    for sr in sample_runs:
+        u = annot.loc[sr]
+        r1 = u["R1"]
+        if not pd.isna(r1):
+            r1_files.append(str(r1))
+        r2 = u["R2"]
+        if not pd.isna(r2):
+            r2_files.append(str(r2))
+    return r1_files, r2_files
+
 def get_quantifications(wildcards):
     if wildcards.kind=="support":
         paths = expand(os.path.join(result_path, "results", "{sample}", "peaks", "{sample}_quantification_support_counts.csv"), sample=samples.keys())

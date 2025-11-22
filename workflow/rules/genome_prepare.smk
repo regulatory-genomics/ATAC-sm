@@ -30,8 +30,6 @@ rule get_autosomes:
         python {workflow.basedir}/scripts/get_autosome.py {input.fai} {output.txt} 2> {log}
         """
 
-
-
 rule gtf2tss:
     input:
         gtf = config.get("gtf", config["refs"].get("gencode_gtf", ""))

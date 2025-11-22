@@ -23,6 +23,34 @@ def _prealigned_fastq_paths(sample_run):
     )
 
 
+def _get_all_trimmed_fastqs_for_sample(sample_name):
+    """Get all trimmed FASTQ files for a sample (all runs)"""
+    sample_runs = get_runs_for_sample(sample_name)
+    r1_files = []
+    r2_files = []
+    for sr in sample_runs:
+        r1_path, r2_path = _trimmed_fastq_paths(sr)
+        if r1_path:
+            r1_files.append(r1_path)
+        if r2_path:
+            r2_files.append(r2_path)
+    return r1_files, r2_files
+
+
+def _get_all_prealigned_fastqs_for_sample(sample_name):
+    """Get all prealigned FASTQ files for a sample (all runs)"""
+    sample_runs = get_runs_for_sample(sample_name)
+    r1_files = []
+    r2_files = []
+    for sr in sample_runs:
+        r1_path, r2_path = _prealigned_fastq_paths(sr)
+        if r1_path:
+            r1_files.append(r1_path)
+        if r2_path:
+            r2_files.append(r2_path)
+    return r1_files, r2_files
+
+
 if has_prealignments:
     for entry in prealignments:
         if isinstance(entry, dict):
@@ -236,50 +264,64 @@ if has_prealignments:
 
 
 if config["alignment"].get("tool", "bowtie2") == "bowtie2":
-    # alignment with bowtie2 & samtools (per run)
+    # alignment with bowtie2 & samtools (per sample, combining all runs)
     rule align_bowtie2:
         input:
-            fasta_fwd = lambda w: (_prealigned_fastq_paths(w.sample_run)[0] if has_prealignments else _trimmed_fastq_paths(w.sample_run)[0]),
-            fasta_rev = lambda w: (_prealigned_fastq_paths(w.sample_run)[1] if has_prealignments else _trimmed_fastq_paths(w.sample_run)[1]),
+            fasta_fwd = lambda w: (_get_all_prealigned_fastqs_for_sample(w.sample)[0] if has_prealignments else _get_all_trimmed_fastqs_for_sample(w.sample)[0]),
+            fasta_rev = lambda w: (_get_all_prealigned_fastqs_for_sample(w.sample)[1] if has_prealignments else _get_all_trimmed_fastqs_for_sample(w.sample)[1]),
             bowtie2_index = os.path.dirname(config["alignment"]["bowtie2"]["index"]),
             adapter_fasta = config["adapters"]["fasta"] if config["adapters"]["fasta"]!="" else [],
             whitelisted_regions = config["refs"]["whitelist"],
         wildcard_constraints:
-            sample_run="|".join(annot.index.tolist())  # Only match actual sample_run names from annotation
+            sample="|".join(samples.keys())  # Only match actual sample names
         output:
-            bam = temp(os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.bam")),
-            bowtie_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.txt'),
-            bowtie_met = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.bowtie2.met'),
-            samblaster_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samblaster.log'),
+            bam = temp(os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam")),
+            bai = temp(os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam.bai")),
+            bowtie_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.bowtie2.log'),
+            bowtie_met = os.path.join(result_path, 'bam', "{sample}", '{sample}.bowtie2.met'),
+            samblaster_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samblaster.log'),
         params:
-            sample_name = lambda w: annot.loc[w.sample_run, 'sample_name'],
-            bowtie2_input = lambda w, input: f"-1 {input.fasta_fwd} -2 {input.fasta_rev}" if annot.loc[w.sample_run, "read_type"] == "paired" else f"-U {input.fasta_fwd}",
-            add_mate_tags = lambda w: "--addMateTags" if annot.loc[w.sample_run, "read_type"] == "paired" else " ",
+            sample_name = "{sample}",
+            # Format FASTQ files as comma-separated lists for bowtie2
+            bowtie2_input = lambda w, input: (
+                f"-1 {','.join(input.fasta_fwd)} -2 {','.join(input.fasta_rev)}" 
+                if samples[w.sample]["read_type"] == "paired" and input.fasta_rev and len(input.fasta_rev) > 0
+                else f"-U {','.join(input.fasta_fwd)}"
+            ),
+            add_mate_tags = lambda w: "--addMateTags" if samples[w.sample]["read_type"] == "paired" else " ",
             adapter_sequence = "-a " + config["adapters"]["sequence"] if config["adapters"]["sequence"] !="" else " ",
             adapter_fasta = "--adapter_fasta " + config["adapters"]["fasta"] if config["adapters"]["fasta"] !="" else " ",
             sequencing_platform = config["alignment"]["sequencing_platform"],
             bowtie2_index = config["alignment"]["bowtie2"]["index"], # The basename of the index for the reference genome excluding the file endings e.g., *.1.bt2
             bowtie2_local_mode = "--local" if config["alignment"].get("local_mode", False) else "",  # Add this param for local mode
+            filtering_flags = lambda w: (
+                f"-q 30 -F {config['filtering']['sam_flag']} -f 2 -L {config['refs']['whitelist']}"
+                if samples[w.sample]["read_type"] == "paired"
+                else f"-q 30 -F {config['filtering']['sam_flag']} -L {config['refs']['whitelist']}"
+            ),
         resources:
             mem_mb=config["resources"].get("mem_mb", 16000),
         threads: 4*config["resources"].get("threads", 2)
         conda:
             "../envs/bowtie2.yaml",
         log:
-            "logs/rules/align_{sample_run}.log"
+            "logs/rules/align_{sample}.log"
         shell:
             """
             mkdir -p $(dirname {output.bam})
             result_path=$(dirname {output.bam})
             find $result_path -type f -name '*.bam.tmp.*' -exec rm {{}} +;
             
-            RG="--rg-id {wildcards.sample_run} --rg SM:{params.sample_name} --rg PL:{params.sequencing_platform}"
+            RG="--rg-id {wildcards.sample} --rg SM:{params.sample_name} --rg PL:{params.sequencing_platform}"
 
             bowtie2 $RG --very-sensitive --no-discordant -p {threads} --maxins 2000 -x {params.bowtie2_index} \
                 {params.bowtie2_local_mode}  \
                 --met-file "{output.bowtie_met}" {params.bowtie2_input} 2> "{output.bowtie_log}" | \
                 samblaster {params.add_mate_tags} 2> "{output.samblaster_log}" | \
+                samtools view {params.filtering_flags} -bhS - 2>> "{output.bowtie_log}" | \
                 samtools sort -o "{output.bam}" - 2>> "{output.bowtie_log}";
+            
+            samtools index "{output.bam}" 2>> "{output.bowtie_log}";
             """
 
 elif config["alignment"].get("tool", "bowtie2") == "bwa-mem2":
@@ -296,45 +338,56 @@ elif config["alignment"].get("tool", "bowtie2") == "bwa-mem2":
             value_str = value
         return f"-T {value_str}"
 
-    # Using bwa-mem2 only
+    # Using bwa-mem2 only (per sample, combining all runs)
 
     rule align_bwa_mem:
         input:
-            fasta_fwd = lambda w: (_prealigned_fastq_paths(w.sample_run)[0] if has_prealignments else _trimmed_fastq_paths(w.sample_run)[0]),
-            fasta_rev = lambda w: (_prealigned_fastq_paths(w.sample_run)[1] if has_prealignments else _trimmed_fastq_paths(w.sample_run)[1]),
+            fasta_fwd = lambda w: (_get_all_prealigned_fastqs_for_sample(w.sample)[0] if has_prealignments else _get_all_trimmed_fastqs_for_sample(w.sample)[0]),
+            fasta_rev = lambda w: (_get_all_prealigned_fastqs_for_sample(w.sample)[1] if has_prealignments else _get_all_trimmed_fastqs_for_sample(w.sample)[1]),
             # If a custom BWA-MEM2 index is set, use it, otherwise rely on generated genome index files
             index = lambda w: multiext(config["refs"]["fasta"], ".amb", ".ann", ".bwt", ".pac", ".sa", ".0123", ".alt") if not config["alignment"]["bwa"].get("index") or config["alignment"]["bwa"].get("index") in ("", "null", None) else [],
             whitelisted_regions = config["refs"]["whitelist"],
         wildcard_constraints:
-            sample_run="|".join(annot.index.tolist())  # Only match actual sample_run names from annotation
+            sample="|".join(samples.keys())  # Only match actual sample names
         output:
-            bam = temp(os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.bam")),
-            bwa_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.bwa.log'),
-            samblaster_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samblaster.log'),
+            bam = temp(os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam")),
+            bai = temp(os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam.bai")),
+            bwa_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.bwa.log'),
+            samblaster_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samblaster.log'),
         params:
-            sample_name = lambda w: annot.loc[w.sample_run, 'sample_name'],
-            bwa_input = lambda w, input: f"{input.fasta_fwd} {input.fasta_rev}" if annot.loc[w.sample_run, "read_type"] == "paired" else f"{input.fasta_fwd}",
-            add_mate_tags = lambda w: "--addMateTags" if annot.loc[w.sample_run, "read_type"] == "paired" else " ",
+            sample_name = "{sample}",
+            # Format FASTQ files as space-separated for bwa-mem2 (bwa accepts multiple files separated by spaces)
+            bwa_input = lambda w, input: (
+                f"{' '.join(input.fasta_fwd)} {' '.join(input.fasta_rev)}" 
+                if samples[w.sample]["read_type"] == "paired" and input.fasta_rev and len(input.fasta_rev) > 0
+                else f"{' '.join(input.fasta_fwd)}"
+            ),
+            add_mate_tags = lambda w: "--addMateTags" if samples[w.sample]["read_type"] == "paired" else " ",
             sequencing_platform = config["alignment"]["sequencing_platform"],
             bwa_args = config["alignment"]["bwa"].get("extra_args", ""),
             bwa_min_score_flag = _sanitize_bwa_min_score_flag(),
             bwa_m_flag = "-M",  # Mark shorter split hits as secondary
             # Use bwa-mem2 index path if set, otherwise use genome_fasta (for bwa)
             bwa_index_path = lambda w: (config["alignment"]["bwa"].get("index") if config["alignment"]["bwa"].get("index") not in ("", "null", None) else config["refs"]["fasta"]),
+            filtering_flags = lambda w: (
+                f"-q 30 -F {config['filtering']['sam_flag']} -f 2 -L {config['refs']['whitelist']}"
+                if samples[w.sample]["read_type"] == "paired"
+                else f"-q 30 -F {config['filtering']['sam_flag']} -L {config['refs']['whitelist']}"
+            ),
         resources:
             mem_mb=config["resources"].get("mem_mb", 64000),
         threads: 4*config["resources"].get("threads", 2)
         conda:
             "../envs/bwa.yaml",
         log:
-            "logs/rules/align_bwa_mem_{sample_run}.log"
+            "logs/rules/align_bwa_mem_{sample}.log"
         shell:
             """
             mkdir -p $(dirname {output.bam})
             result_path=$(dirname {output.bam})
             find $result_path -type f -name '*.bam.tmp.*' -exec rm {{}} +;
             
-            RG="@RG\\tID:{wildcards.sample_run}\\tSM:{params.sample_name}\\tPL:{params.sequencing_platform}"
+            RG="@RG\\tID:{wildcards.sample}\\tSM:{params.sample_name}\\tPL:{params.sequencing_platform}"
 
             BWA_INDEX_PATH="{params.bwa_index_path}"
 
@@ -347,8 +400,10 @@ elif config["alignment"].get("tool", "bowtie2") == "bwa-mem2":
                 $BWA_INDEX_PATH \
                 {params.bwa_input} 2> {output.bwa_log} | \
                 samblaster {params.add_mate_tags} 2> {output.samblaster_log} | \
-                samtools view -bhS -F 0x0100 -O BAM - 2>> {output.bwa_log} | \
+                samtools view {params.filtering_flags} -bhS - 2>> {output.bwa_log} | \
                 samtools sort -o {output.bam} - 2>> {output.bwa_log};
+            
+            samtools index "{output.bam}" 2>> "{output.bwa_log}";
             """
 
 else:
@@ -369,90 +424,33 @@ rule bwa_mem2_index:
         bwa-mem2 index {input.fasta} 2> {log}
         """
 
+# Generate alignment stats for per-sample BAM files
 rule samtools_process:
     input:
-        bam = os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.bam"),
+        bam = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam"),
+        bai = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam.bai"),
     output:
-        filtered_bam = temp(os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.filtered.bam")),
-        filtered_bai = temp(os.path.join(result_path,"results","{sample_run}","mapped", "{sample_run}.filtered.bam.bai")),
-        samtools_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samtools.log'),
-        samtools_flagstat_log = os.path.join(result_path, 'results', "{sample_run}", 'mapped', '{sample_run}.samtools_flagstat.log'),
-        stats = os.path.join(result_path, 'results', "{sample_run}", '{sample_run}.align.stats.tsv'),
+        samtools_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samtools.log'),
+        samtools_flagstat_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samtools_flagstat.log'),
+        stats = os.path.join(result_path, 'results', "{sample}", '{sample}.align.stats.tsv'),
     params:
-        filtering = lambda w: "-q 30 -F {flag} -f 2 -L {whitelist}".format(
-            flag=config["filtering"]["sam_flag"],
-            whitelist=config["refs"]["whitelist"],
-        ) if annot.loc[w.sample_run, "read_type"] == "paired" else "-q 30 -F {flag} -L {whitelist}".format(
-            flag=config["filtering"]["sam_flag"],
-            whitelist=config["refs"]["whitelist"],
-        ),
         mitochondria_name = config["refs"].get("mito_name", "chrM"),
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
     threads: config["resources"].get("threads", 1)
     conda:
         "../envs/bowtie2.yaml",
-    shell:
-        '''
-            samtools index "{input.bam}" 2>> "{output.samtools_log}";
-            samtools idxstats "{input.bam}" | awk '{{ sum += $3 + $4; if($1 == "{params.mitochondria_name}") {{ mito_count = $3; }}}}END{{ print "mitochondrial_fraction\t"mito_count/sum }}' > "{output.stats}";
-            samtools flagstat "{input.bam}" > "{output.samtools_flagstat_log}";
-
-            samtools view {params.filtering} -o "{output.filtered_bam}" "{input.bam}";
-            samtools index "{output.filtered_bam}";
-        '''
-
-# Merge BAM files for samples with multiple runs
-# Note: This rule only matches actual sample names (not sample_run names)
-def get_merge_bam_inputs(wildcards):
-    """Get inputs for merge_bam, validating that wildcards.sample is a valid sample name"""
-    if wildcards.sample not in samples:
-        # Return a non-existent file to prevent rule matching for invalid sample names
-        # This file will never exist, so the rule won't match
-        return [os.path.join(result_path, "__INVALID_SAMPLE__", f"{wildcards.sample}.bam")]
-    return [os.path.join(result_path, "results", sr, "mapped", f"{sr}.filtered.bam") 
-            for sr in get_runs_for_sample(wildcards.sample)]
-
-rule merge_bam:
-    input:
-        get_merge_bam_inputs,
     wildcard_constraints:
-        sample="|".join(samples.keys())  # Only match actual sample names (not sample_run names)
-    output:
-        bam = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam"),
-        bai = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam.bai"),
-    params:
-        sample_name = "{sample}",
-        num_inputs = lambda w: len(get_runs_for_sample(w.sample)),
-        input_bams = lambda w: " ".join([os.path.join(result_path, "results", sr, "mapped", f"{sr}.filtered.bam") 
-                                          for sr in get_runs_for_sample(w.sample)]),
-        # Only match if this is a valid sample name (check happens in input function)
-        is_valid_sample = lambda w: w.sample in samples,
-    resources:
-        mem_mb=config["resources"].get("mem_mb", 16000),
-    threads: config["resources"].get("threads", 2)
-    conda:
-        "../envs/bowtie2.yaml",
-    log:
-        "logs/rules/merge_bam_{sample}.log"
+        sample="|".join(samples.keys())  # Only match actual sample names
     shell:
-        """
-        mkdir -p $(dirname {output.bam})
-        
-        if [ {params.num_inputs} -eq 1 ]; then
-            # Single run, just copy
-            cp {input[0]} {output.bam}
-            if [ -f {input[0]}.bai ]; then
-                cp {input[0]}.bai {output.bai}
-            else
-                samtools index {output.bam}
-            fi
-        else
-            # Multiple runs, merge
-            samtools merge -f -@ {threads} {output.bam} {params.input_bams} 2> {log}
-            samtools index {output.bam} 2>> {log}
-        fi
-        """
+        '''
+            mkdir -p $(dirname {output.stats})
+            samtools idxstats "{input.bam}" | awk '{{ sum += $3 + $4; if($1 == "{params.mitochondria_name}") {{ mito_count = $3; }}}}END{{ print "mitochondrial_fraction\t"mito_count/sum }}' > "{output.stats}" 2>> "{output.samtools_log}";
+            samtools flagstat "{input.bam}" > "{output.samtools_flagstat_log}" 2>> "{output.samtools_log}";
+        '''
+
+# Note: merge_bam rule removed - alignment now directly outputs per-sample BAM files
+# combining all runs in a single alignment step
         
 # peak calling with MACS2 & samtools and annotation with HOMER
 rule peak_calling:

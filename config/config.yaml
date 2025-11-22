@@ -2,9 +2,10 @@
 project:
   name: macrophage_atac
   genome: hg38
-  out_dir: /storage/zhangkaiLab/hanlitian/macrophage/process/20251120_ATAC_test1
-  # Sample sheet / Annotation file
-  samples: /storage/zhangkaiLab/hanlitian/macrophage/script/ATAC-sm/config/annotation.csv
+  # Output directory (can use {process_dir} placeholder from PEP)
+  out_dir: {process_dir}/20251120_ATAC_test1
+  # Sample sheet / Annotation file (managed by PEP)
+  samples: ../config/annotation.csv
   pep_config: ../pep/project_config.yaml
   read_type : paired # If you have mixed read_type, you should specify in your sample sheet.
 
@@ -17,8 +18,8 @@ resources:
 # 1. Adapter Trimming / Handling
 adapters:
   sequence: "CTGTCTCTTATA" # Nextera
-  # Used by Bowtie2 if provided
-  fasta: /storage/zhangkaiLab/hanlitian/database/algin_ref/atac_pipeline/hg38/nextera_adapters.fa
+  # Used by Bowtie2 if provided (uses {database_dir} from PEP)
+  fasta: {database_dir}/hg38/nextera_adapters.fa
 
 # 2. Alignment Strategy
 alignment:
@@ -35,13 +36,15 @@ alignment:
   
   # Tool Specifics
   bwa:
-    index: /storage/zhangkaiLab/shared/genomes/GRCh38/bwa-mem2/GRCh38
+    # Uses {shared_genome_dir} from PEP
+    index: {shared_genome_dir}/bwa-mem2/GRCh38
     min_score: null
     threads: null # null = defaults
     extra_args: ""
   
   bowtie2:
-    index: /storage/zhangkaiLab/hanlitian/database/algin_ref/atac_pipeline/hg38/indices_for_Bowtie2/hg38
+    # Uses {database_dir} from PEP
+    index: {database_dir}/hg38/indices_for_Bowtie2/hg38
 
 # 3. Filtering & QC
 filtering:
@@ -67,22 +70,22 @@ annotation:
     regulatory: ../resources/UROPA/regulatory_config_TEMPLATE.txt
 
 ##### GENOME REFERENCES (HG38) #####
-# Paths to static resources
+# Paths to static resources (uses {database_dir} from PEP)
 refs:
   # Base Genomes
-  fasta: /storage/zhangkaiLab/hanlitian/database/algin_ref/atac_pipeline/hg38/hg38.fa
-  chrom_sizes: /storage/zhangkaiLab/hanlitian/database/algin_ref/atac_pipeline/hg38/hg38.chromSizes
+  fasta: {database_dir}/hg38/hg38.fa
+  chrom_sizes: {database_dir}/hg38/hg38.chromSizes
   genome_size_bp: 2747877777
   mito_name: chrM
 
   # Feature Files
-  blacklist: /storage/zhangkaiLab/hanlitian/database/algin_ref/atac_pipeline/hg38/hg38-ENCODE_blacklist.sorted.v3.bed
-  whitelist: /storage/zhangkaiLab/hanlitian/database/algin_ref/atac_pipeline/hg38/hg38-ENCODE_whitelist.sorted.v3.bed
-  unique_tss: /storage/zhangkaiLab/hanlitian/database/algin_ref/atac_pipeline/hg38/hg38_gencode_tss_unique.sorted.bed
-  regulatory_regions: /storage/zhangkaiLab/hanlitian/database/algin_ref/atac_pipeline/hg38/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.chromosomes_only.20161111.bed
+  blacklist: {database_dir}/hg38/hg38-ENCODE_blacklist.sorted.v3.bed
+  whitelist: {database_dir}/hg38/hg38-ENCODE_whitelist.sorted.v3.bed
+  unique_tss: {database_dir}/hg38/hg38_gencode_tss_unique.sorted.bed
+  regulatory_regions: {database_dir}/hg38/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.chromosomes_only.20161111.bed
 
   # GTF Annotations
-  gencode_gtf: /storage/zhangkaiLab/hanlitian/database/algin_ref/atac_pipeline/hg38/gencode.v38.basic.annotation.gtf
-  regulatory_gtf: /storage/zhangkaiLab/hanlitian/database/algin_ref/atac_pipeline/hg38/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.20210107.gtf
+  gencode_gtf: {database_dir}/hg38/gencode.v38.basic.annotation.gtf
+  regulatory_gtf: {database_dir}/hg38/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.20210107.gtf
 
 

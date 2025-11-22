@@ -33,19 +33,21 @@ rule fastqc_2:
     wrapper:
         "v7.6.1/bio/fastqc"
 
-rule trim_galore_pe:
+rule fastp:
     input:
         get_units_fastqs,
     output:
-        fasta_fwd=temp(os.path.join(result_path,"trimmed","{sample_run}_1.fq.gz")),
-        report_fwd=os.path.join(result_path,"trimmed","{sample_run}_1._trimming_report.txt"),
-        fasta_rev=temp(os.path.join(result_path,"trimmed","{sample_run}_2.fq.gz")),
-        report_rev=os.path.join(result_path,"trimmed","{sample_run}_2._trimming_report.txt"),
-    threads: 2
+        r1 = temp(os.path.join(result_path,"trimmed","{sample_run}_1.fq.gz")),
+        r2 = temp(os.path.join(result_path,"trimmed","{sample_run}_2.fq.gz"))
+        report_html = os.path.join(result_path,"report","{sample_run}_fastp.html")
+        report_json = os.path.join(result_path,"report","{sample_run}_fastp.json")
+    conda: 
+        "../envs/fastp.yaml"
     log:
-        "logs/trim_galore/{sample_run}.log"
-    wrapper:
-        "v7.6.0/bio/trim_galore/pe"
+        "logs/fastp/{sample_run}.fastp.json"
+    threads: 4
+    shell:
+        "fastp -i {input.r1} -I {input.r2} -o {output.r1} -O {output.r2} --detect_adapter_for_pe --trim_poly_g  --thread {threads} -j {output.report_json} -h {output.report_html}"
 
 
 rule tss_coverage:

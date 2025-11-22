@@ -26,36 +26,101 @@ envs = ["macs2_homer","multiqc","pybedtools","uropa","ggplot","ataqv"]
 # load config and sample annotation sheets #####
 configfile: os.path.join("config","config.yaml")
 validate(config, schema="../schemas/config.schema.yml")
-# load sample/unit annotation
-annot = pd.read_csv(config["project"]["samples"])
-validate(annot, schema="../schemas/samples.schema.yml")
+
+# Load PEP project to get sample metadata
+pep_config_value = config["project"].get("pep_config", os.path.join("..","pep", "project_config.yaml"))
+pep_config_path = pep_config_value if os.path.isabs(pep_config_value) else os.path.join(workflow.basedir, pep_config_value)
+
+# Load PEP project
+pep_project = Project(pep_config_path)
+
+# Merge PEP path variables into config for easier access
+# This allows config.yaml to use shorter path references via config["paths"]
+if "paths" in pep_project.config:
+    if "paths" not in config:
+        config["paths"] = {}
+    config["paths"].update(pep_project.config["paths"])
+
+# Helper function to resolve path placeholders in config
+# Replaces {database_dir}, {shared_genome_dir}, etc. with actual paths from PEP
+def resolve_config_paths(cfg, paths_dict):
+    """Recursively resolve path placeholders in config dictionary"""
+    if isinstance(cfg, dict):
+        return {k: resolve_config_paths(v, paths_dict) for k, v in cfg.items()}
+    elif isinstance(cfg, list):
+        return [resolve_config_paths(item, paths_dict) for item in cfg]
+    elif isinstance(cfg, str) and "{" in cfg and "}" in cfg:
+        # Replace placeholders like {database_dir}/hg38/file.fa
+        for key, value in paths_dict.items():
+            cfg = cfg.replace(f"{{{key}}}", value)
+        return cfg
+    else:
+        return cfg
+
+# Resolve path placeholders in config using PEP paths
+if "paths" in config:
+    config = resolve_config_paths(config, config["paths"])
+
+# Get sample table from PEP (PEP handles derive modifiers like raw_data| prefix expansion)
+annot = pep_project.sample_table.copy()
+
+# PEP may auto-merge duplicate sample_name rows, creating list-valued columns.
+# We need to explode these back into separate rows if they exist.
+# Check for list-valued columns and explode them
+list_cols = [col for col in annot.columns if annot[col].apply(lambda x: isinstance(x, list)).any()]
+if list_cols:
+    # Explode list-valued columns to separate rows
+    for col in list_cols:
+        annot = annot.explode(col, ignore_index=True)
+
+# Ensure required columns exist
+required_columns = {"sample_name", "run"}
+missing_required = required_columns.difference(annot.columns)
+if missing_required:
+    raise ValueError(f"Sample table missing required columns: {', '.join(sorted(missing_required))}.")
+
+# Ensure read_type is present
+if 'read_type' not in annot.columns:
+    annot['read_type'] = config["project"]["read_type"]
+
+# Ensure run column is integer before validation
+annot['run'] = pd.to_numeric(annot['run'], errors='raise').astype(int)
 
 # Create a unique identifier for each run: sample_name_run
-annot['sample_run'] = annot['sample_name'].astype(str) + '_' + annot['run'].astype(str)
+annot['sample_name'] = annot['sample_name'].astype(str)
+annot['sample_run'] = annot['sample_name'] + '_' + annot['run'].astype(str)
 
+# Validate sample table
+validate(annot, schema="../schemas/samples.schema.yml")
+
+# Check for duplicate sample_run identifiers
 duplicates = annot[annot.duplicated(subset=['sample_run'], keep=False)]
-
 if not duplicates.empty:
     sys.stderr.write("\nError: Duplicate (sample_name + run) pairs found in sample sheet!\n")
     sys.stderr.write("The following rows are not unique:\n")
-    sys.stderr.write(str(duplicates['sample_run']) + "\n\n")
+    sys.stderr.write(str(duplicates[['sample_name', 'run', 'sample_run']]) + "\n\n")
     sys.exit(1)
 
+# Set sample_run as index
 annot = annot.set_index('sample_run')
-
-if 'read_type' not in annot.columns:
-    annot['read_type'] = config["project"]["read_type"]
 
 # Get unique sample names (for downstream analysis)
 samples = annot.reset_index().drop_duplicates(subset='sample_name', keep='first').set_index("sample_name").to_dict(orient="index")
 
+# Get the original annotation sheet path from PEP for export/reporting
+sample_table_entry = pep_project.config.get("sample_table")
+if sample_table_entry is None:
+    raise ValueError(f"PEP config {pep_config_path} missing 'sample_table'.")
+annotation_sheet_path = sample_table_entry if os.path.isabs(sample_table_entry) else os.path.abspath(
+    os.path.join(os.path.dirname(pep_config_path), sample_table_entry)
+)
+
 ##### set global variables
-result_path = os.path.join(config["project"]["out_dir"], module_name)
+result_path = config["project"]["out_dir"]
 HOMER_path = os.path.abspath(os.path.join("resources", config["project"]["name"], "HOMER"))
 
 # to deal with rule ambiguity concerning final outputs in counts/
 ruleorder: sample_annotation > quantify_aggregate
-ruleorder: merge_bam > peak_calling
 
 # ===================================================
 #                    Rules Section
