@@ -11,7 +11,10 @@ rule sample_annotation:
     log:
         "logs/rules/sample_annotation.log"
     run:
-        annot_df = pd.read_csv(input.multiqc_stats, delimiter='\t', index_col=0).loc[samples,:]
+        annot_df = pd.read_csv(input.multiqc_stats, delimiter='\t', index_col=0)
+        # samples is a dict, convert to list of keys for indexing
+        sample_list = list(samples.keys())
+        annot_df = annot_df.loc[sample_list,:]
         annot_df.columns = [col.split("mqc-generalstats-")[1].replace("the_atac_seq_pipeline-", "").replace('-', '_') for col in annot_df.columns]
         annot_df.index.names = ['sample_name']
         annot_df.to_csv(output.sample_annot)

@@ -49,87 +49,159 @@ sig <- vapply(cat_cols,
 meta_cols <- c(cat_cols[!duplicated(sig)], num_cols)
 
 #### Z-score & cluster QC data ####
-qc_mat <- anno |> select(all_of(qc_cols)) |> scale() |> as.matrix()
-
-row_ord <- hclust(dist(qc_mat))$order
-col_ord <- hclust(dist(t(qc_mat)))$order
-
-qc_long <- as_tibble(qc_mat[row_ord, col_ord], rownames = "sample") |>
-           pivot_longer(-sample, names_to = "metric", values_to = "z")
+# Check if we have any QC columns
+if (length(qc_cols) == 0 || nrow(anno) == 0) {
+    # No QC data, create empty outputs
+    qc_long <- tibble(sample = character(), metric = character(), z = numeric())
+    row_ord <- integer(0)
+    col_ord <- integer(0)
+    qc_mat <- matrix(nrow = 0, ncol = 0)
+} else {
+    qc_mat <- anno |> select(all_of(qc_cols)) |> scale() |> as.matrix()
+    
+    # Check if we have enough samples/columns for clustering
+    # Need at least 2 samples for row clustering and 2 columns for column clustering
+    if (nrow(qc_mat) >= 2) {
+        row_ord <- hclust(dist(qc_mat))$order
+    } else if (nrow(qc_mat) == 1) {
+        row_ord <- 1  # Use original order if only 1 sample
+    } else {
+        row_ord <- integer(0)  # Empty matrix
+    }
+    
+    if (ncol(qc_mat) >= 2) {
+        col_ord <- hclust(dist(t(qc_mat)))$order
+    } else if (ncol(qc_mat) == 1) {
+        col_ord <- 1  # Use original order if only 1 column
+    } else {
+        col_ord <- integer(0)  # Empty matrix
+    }
+    
+    # Ensure indices are valid
+    if (length(row_ord) > 0 && length(col_ord) > 0) {
+        # Validate indices are within bounds
+        row_ord <- row_ord[row_ord >= 1 & row_ord <= nrow(qc_mat)]
+        col_ord <- col_ord[col_ord >= 1 & col_ord <= ncol(qc_mat)]
+        
+        if (length(row_ord) > 0 && length(col_ord) > 0) {
+            qc_long <- as_tibble(qc_mat[row_ord, col_ord, drop = FALSE], rownames = "sample") |>
+                       pivot_longer(-sample, names_to = "metric", values_to = "z")
+        } else {
+            qc_long <- tibble(sample = character(), metric = character(), z = numeric())
+        }
+    } else {
+        qc_long <- tibble(sample = character(), metric = character(), z = numeric())
+    }
+}
 
 #### prepare metadata for plotting ####
-meta_long <- anno[row_ord, meta_cols]                                     %>% 
-  mutate(sample = rownames(anno)[row_ord])                                %>% 
-  mutate(across(-sample, as.character))                                   %>% 
-  pivot_longer(-sample, names_to = "meta", values_to = "value")           %>% 
-  group_by(meta)                                                          %>% 
-  mutate(num_val = suppressWarnings(as.numeric(value)),
-         type    = if (all(!is.na(num_val))) "numeric" else "factor",
-         col     = if (type[1] == "numeric") {
-                      scales::col_numeric("plasma",
-                                          domain = range(num_val, na.rm = TRUE))(num_val)
-                    } else {
-                      pal <- scales::hue_pal(l = 65)(n_distinct(value))
-                      setNames(pal, sort(unique(value)))[value]
-                    }
-         )                                                   %>% 
-  ungroup()                                                               %>% 
-  select(-num_val)
-
-#### embed ALL metadata into a tooltip string of interactive plot ####
-meta_txt <- anno[row_ord, meta_cols] %>% mutate(across(everything(), as.character))
-meta_txt <- pmap_chr(meta_txt, \(...) {
-               vals <- c(...)
-               paste(paste(names(vals), vals, sep = ": "), collapse = "<br>")
-           })
-names(meta_txt) <- rownames(anno)[row_ord]
+if (length(row_ord) > 0 && length(meta_cols) > 0 && nrow(anno) > 0) {
+    meta_long <- anno[row_ord, meta_cols, drop = FALSE]                                     %>% 
+      mutate(sample = rownames(anno)[row_ord])                                %>% 
+      mutate(across(-sample, as.character))                                   %>% 
+      pivot_longer(-sample, names_to = "meta", values_to = "value")           %>% 
+      group_by(meta)                                                          %>% 
+      mutate(num_val = suppressWarnings(as.numeric(value)),
+             type    = if (all(!is.na(num_val))) "numeric" else "factor",
+             col     = if (type[1] == "numeric") {
+                          scales::col_numeric("plasma",
+                                              domain = range(num_val, na.rm = TRUE))(num_val)
+                        } else {
+                          pal <- scales::hue_pal(l = 65)(n_distinct(value))
+                          setNames(pal, sort(unique(value)))[value]
+                        }
+             )                                                   %>% 
+      ungroup()                                                               %>% 
+      select(-num_val)
+    
+    #### embed ALL metadata into a tooltip string of interactive plot ####
+    meta_txt <- anno[row_ord, meta_cols, drop = FALSE] %>% mutate(across(everything(), as.character))
+    meta_txt <- pmap_chr(meta_txt, \(...) {
+                   vals <- c(...)
+                   paste(paste(names(vals), vals, sep = ": "), collapse = "<br>")
+               })
+    names(meta_txt) <- rownames(anno)[row_ord]
+} else {
+    meta_long <- tibble(sample = character(), meta = character(), value = character(), type = character(), col = character())
+    meta_txt <- character(0)
+}
 
 #### plot heatmaps ####
 
 #### QC heatmap ####
 
 # add (un-scaled) metric values (raw) for tooltip of interactive plot
-qc_raw_long <- anno[row_ord, qc_cols] %>%
-               mutate(sample = rownames(anno)[row_ord]) %>% 
-               pivot_longer(-sample, names_to = "metric", values_to = "raw")
-
-qc_long <- qc_long %>% left_join(qc_raw_long, by = c("sample", "metric"))
-
-# keep the clustered order in the plot and add hover-tooltip
-qc_long <- qc_long %>% 
-  mutate(sample = factor(sample,  levels = rownames(qc_mat)[row_ord]), # row-order
-         metric = factor(metric,  levels = colnames(qc_mat)[col_ord]), # col-order
-         hover  = paste0("Sample: ", sample,
-                         "<br>Metric: ", metric,
-                         "<br>Value: ",   signif(raw, 4),
-                         "<br>", meta_txt[as.character(sample)])
-        )
+if (length(row_ord) > 0 && length(qc_cols) > 0 && nrow(anno) > 0 && nrow(qc_long) > 0) {
+    qc_raw_long <- anno[row_ord, qc_cols, drop = FALSE] %>%
+                   mutate(sample = rownames(anno)[row_ord]) %>% 
+                   pivot_longer(-sample, names_to = "metric", values_to = "raw")
+    
+    if (nrow(qc_raw_long) > 0) {
+        qc_long <- qc_long %>% left_join(qc_raw_long, by = c("sample", "metric"))
+    } else {
+        qc_long <- qc_long %>% mutate(raw = NA_real_)
+    }
+    
+    # keep the clustered order in the plot and add hover-tooltip
+    sample_levels <- if (length(row_ord) > 0) rownames(qc_mat)[row_ord] else character(0)
+    metric_levels <- if (length(col_ord) > 0) colnames(qc_mat)[col_ord] else character(0)
+    
+    qc_long <- qc_long %>% 
+      mutate(sample = factor(sample,  levels = sample_levels), # row-order
+             metric = factor(metric,  levels = metric_levels), # col-order
+             hover  = ifelse(length(meta_txt) > 0 && as.character(sample) %in% names(meta_txt),
+                            paste0("Sample: ", sample,
+                                   "<br>Metric: ", metric,
+                                   "<br>Value: ",   signif(raw, 4),
+                                   "<br>", meta_txt[as.character(sample)]),
+                            paste0("Sample: ", sample,
+                                   "<br>Metric: ", metric,
+                                   "<br>Value: ",   signif(raw, 4)))
+            )
+} else {
+    if (nrow(qc_long) > 0) {
+        qc_long <- qc_long %>% mutate(raw = NA_real_, hover = character(length = nrow(qc_long)))
+    } else {
+        qc_long <- qc_long %>% mutate(raw = numeric(0), hover = character(0))
+    }
+    sample_levels <- character(0)
+    metric_levels <- character(0)
+}
 
 # plot
-p_qc <- ggplot(qc_long, aes(x = metric,
-                            y = sample,
-                            fill = z,
-                            text = hover)) +
-        geom_tile() +
-        scale_x_discrete(limits = colnames(qc_mat)[col_ord]) +           # enforce col order
-        scale_y_discrete(limits = rownames(qc_mat)[row_ord]) +           # enforce row order
-        scale_fill_gradient2(low = "blue", mid = "white", high = "red", name = "z-score",
-                     guide = guide_colourbar(barheight = 2,  # thinner
-                                             barwidth  = 0.15)) +
-        labs(x = NULL, y = NULL, title = "QC metrics (scaled)") +
-        theme(axis.text.x = element_text(angle = 45, hjust = 1),
-              panel.grid = element_blank())
+if (nrow(qc_long) > 0) {
+    p_qc <- ggplot(qc_long, aes(x = metric,
+                                y = sample,
+                                fill = z,
+                                text = hover)) +
+            geom_tile() +
+            scale_x_discrete(limits = metric_levels) +           # enforce col order
+            scale_y_discrete(limits = sample_levels) +           # enforce row order
+            scale_fill_gradient2(low = "blue", mid = "white", high = "red", name = "z-score",
+                         guide = guide_colourbar(barheight = 2,  # thinner
+                                                 barwidth  = 0.15)) +
+            labs(x = NULL, y = NULL, title = "QC metrics (scaled)") +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                  panel.grid = element_blank())
+} else {
+    # Create empty plot
+    p_qc <- ggplot() + 
+            labs(x = NULL, y = NULL, title = "QC metrics (scaled) - No data available") +
+            theme_minimal()
+}
 
 #### metadata heatmap as "annotation" ####
 p_meta <- NULL
-if(length(meta_cols) > 0){
+if(length(meta_cols) > 0 && nrow(meta_long) > 0 && length(row_ord) > 0){
     # order columns (x) exactly like the QC heatmap
-    meta_long <- meta_long %>% mutate(sample = factor(sample,  levels = rownames(qc_mat)[row_ord]))   # row-order
+    sample_levels_meta <- if (length(row_ord) > 0) rownames(qc_mat)[row_ord] else character(0)
+    meta_long <- meta_long %>% mutate(sample = factor(sample,  levels = sample_levels_meta))   # row-order
     meta_levels <- unique(meta_long$meta)
     meta_long   <- meta_long %>% mutate(meta = factor(meta, levels = meta_levels))
     
+    sample_levels_for_meta <- if (nrow(qc_long) > 0 && length(levels(qc_long$sample)) > 0) levels(qc_long$sample) else character(0)
     p_meta <- ggplot() +
-              scale_y_discrete(limits = levels(qc_long$sample)) +
+              scale_y_discrete(limits = sample_levels_for_meta) +
               scale_x_discrete(limits = meta_levels) +
                 labs(x = NULL, y = NULL, title = "Metadata") +
               theme(axis.text.x = element_text(angle = 45, hjust = 1),
@@ -180,13 +252,13 @@ if(length(meta_cols) > 0){
 p_combined <- if (is.null(p_meta)) p_qc else (p_qc | p_meta) + plot_layout(widths = c(length(qc_cols), length(meta_cols)), guides = "collect") & theme(legend.position = "right")
 
 # determine sizes
-n_rows <- nrow(qc_mat)
-n_cols <- length(qc_cols) + length(meta_cols)
-max_row_label <- max(nchar(rownames(anno)))
-max_col_label <- max(nchar(c(qc_cols, meta_cols)))
+n_rows <- max(1, nrow(qc_mat))  # At least 1 to avoid zero height
+n_cols <- max(1, length(qc_cols) + length(meta_cols))  # At least 1 to avoid zero width
+max_row_label <- if (nrow(anno) > 0 && length(rownames(anno)) > 0) max(nchar(rownames(anno))) else 10
+max_col_label <- if (length(c(qc_cols, meta_cols)) > 0) max(nchar(c(qc_cols, meta_cols))) else 10
 
-height_in <- n_rows * 0.08 + max_col_label * 0.05 + 1
-width_in  <- n_cols * 0.10 + max_row_label * 0.05 + 2
+height_in <- max(2, n_rows * 0.08 + max_col_label * 0.05 + 1)  # Minimum 2 inches
+width_in  <- max(2, n_cols * 0.10 + max_row_label * 0.05 + 2)   # Minimum 2 inches
 
 # options(repr.plot.width = width_in, repr.plot.height = height_in)
 # p_combined
@@ -195,11 +267,14 @@ ggsave(sample_annotation_plot_path, plot = p_combined, width = width_in, height 
 
 #### interactive plot ####
 # determine sizes in pixels
-width_px  <- round((length(qc_cols) * 0.10 + max_row_label * 0.05 + 2) * 96)
-height_px <- round(height_in * 96)
+width_px  <- max(200, round((max(1, length(qc_cols)) * 0.10 + max_row_label * 0.05 + 2) * 96))  # Minimum 200px
+height_px <- max(200, round(height_in * 96))  # Minimum 200px
 
-p_qc_interactive  <- plotly::ggplotly(p_qc,  tooltip = "text", width = width_px, height = height_px)
-
-# p_qc_interactive
-
-htmlwidgets::saveWidget(p_qc_interactive, sample_annotation_html_path, selfcontained = TRUE, title = "Sample annotation")
+if (nrow(qc_long) > 0) {
+    p_qc_interactive  <- plotly::ggplotly(p_qc,  tooltip = "text", width = width_px, height = height_px)
+    htmlwidgets::saveWidget(p_qc_interactive, sample_annotation_html_path, selfcontained = TRUE, title = "Sample annotation")
+} else {
+    # Create empty HTML file
+    html_content <- "<html><body><h1>Sample Annotation</h1><p>No data available for plotting.</p></body></html>"
+    writeLines(html_content, sample_annotation_html_path)
+}

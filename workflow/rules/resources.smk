@@ -8,6 +8,7 @@ rule install_homer:
         genome = config["project"]["genome"],
     resources:
         mem_mb=config["resources"].get("mem_mb", 8000),
+        runtime = 10,
     threads: config["resources"].get("threads", 1)
     conda:
         "../envs/macs2_homer.yaml",

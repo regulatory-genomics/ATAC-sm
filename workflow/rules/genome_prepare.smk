@@ -8,6 +8,9 @@ rule get_genome_fai:
         "logs/rules/get_genome_fai.log"
     conda:
         "../envs/bowtie2.yaml"
+    resources:
+        mem_mb=1000,
+        runtime = 10,
     shell:
         """
         mkdir -p $(dirname {output.fai})
@@ -24,6 +27,9 @@ rule get_autosomes:
         "logs/get_autosomes/get_autosomes.log"
     conda:
         "../envs/bowtie2.yaml"
+    resources:
+        mem_mb=1000,
+        runtime = 10,
     shell:
         """
         # Get autosomes from FAI file
@@ -39,6 +45,9 @@ rule gtf2tss:
         "logs/rules/gtf2tss/gtf2tss.log"
     conda:
         "../envs/macs2_homer.yaml" # Because this yaml contains perl
+    resources:
+        mem_mb=1000,
+        runtime = 10,
     shell:
         """
         mkdir -p $(dirname {output.tss})

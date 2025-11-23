@@ -165,39 +165,121 @@ rule region_annotation_aggregate:
     log:
         "logs/rules/region_annotation_aggregate.log"
     run:
+        import os
+        import shutil
+        
+        # Helper function to check if file is empty
+        def is_empty_file(filepath):
+            return not os.path.exists(filepath) or os.path.getsize(filepath) == 0
+        
         # load and format uropa gencode results
-        gencode_characterization = pd.read_csv(input.gencode_results, sep='\t')
-        gencode_characterization = gencode_characterization.set_index("peak_id")
-        gencode_characterization.loc[gencode_characterization['feature']=='transcript','feat_type']='transcript:'+gencode_characterization.loc[gencode_characterization['feature']=='transcript','transcript_type']
-        gencode_characterization.loc[gencode_characterization['feature']=='gene','feat_type']='gene:'+gencode_characterization.loc[gencode_characterization['feature']=='gene','gene_type']
-        gencode_characterization['length']=gencode_characterization['peak_end']-gencode_characterization['peak_start']
-        gencode_characterization=gencode_characterization[['peak_chr','peak_start','peak_end','length','feat_anchor','distance','relative_location','feat_type','gene_id','gene_name','name']]
-        gencode_characterization.columns=['chr','start','end','length','feat_anchor','distance','location','feat_type','gene_id','gene_name','characterization']
-        gencode_characterization.loc[gencode_characterization['characterization'].isna(),'characterization']='NONE'
+        if is_empty_file(input.gencode_results):
+            gencode_characterization = pd.DataFrame(columns=['peak_chr','peak_start','peak_end','length','feat_anchor','distance','relative_location','feat_type','gene_id','gene_name','characterization'])
+            gencode_characterization = gencode_characterization.set_index(pd.Index([], name='peak_id'))
+        else:
+            gencode_characterization = pd.read_csv(input.gencode_results, sep='\t')
+            if len(gencode_characterization) == 0:
+                gencode_characterization = pd.DataFrame(columns=['peak_chr','peak_start','peak_end','length','feat_anchor','distance','relative_location','feat_type','gene_id','gene_name','characterization'])
+                gencode_characterization = gencode_characterization.set_index(pd.Index([], name='peak_id'))
+            else:
+                gencode_characterization = gencode_characterization.set_index("peak_id")
+                gencode_characterization.loc[gencode_characterization['feature']=='transcript','feat_type']='transcript:'+gencode_characterization.loc[gencode_characterization['feature']=='transcript','transcript_type']
+                gencode_characterization.loc[gencode_characterization['feature']=='gene','feat_type']='gene:'+gencode_characterization.loc[gencode_characterization['feature']=='gene','gene_type']
+                gencode_characterization['length']=gencode_characterization['peak_end']-gencode_characterization['peak_start']
+                gencode_characterization=gencode_characterization[['peak_chr','peak_start','peak_end','length','feat_anchor','distance','relative_location','feat_type','gene_id','gene_name','name']]
+                gencode_characterization.columns=['chr','start','end','length','feat_anchor','distance','location','feat_type','gene_id','gene_name','characterization']
+                gencode_characterization.loc[gencode_characterization['characterization'].isna(),'characterization']='NONE'
         gencode_characterization=gencode_characterization.add_prefix('gencode_')
 
         # load and format uropa regulatory build results
-        reg_characterization=pd.read_csv(input.reg_results,sep='\t')
-        reg_characterization = reg_characterization.set_index('peak_id')[['feature','ID']]
-        reg_characterization.columns=['reg_feature','reg_feature_id']
-        reg_characterization.loc[reg_characterization['reg_feature'].isna(),'reg_feature']='reg_NONE'
+        if is_empty_file(input.reg_results):
+            reg_characterization = pd.DataFrame(columns=['reg_feature','reg_feature_id'])
+            reg_characterization = reg_characterization.set_index(pd.Index([], name='peak_id'))
+        else:
+            reg_characterization=pd.read_csv(input.reg_results,sep='\t')
+            if len(reg_characterization) == 0:
+                reg_characterization = pd.DataFrame(columns=['reg_feature','reg_feature_id'])
+                reg_characterization = reg_characterization.set_index(pd.Index([], name='peak_id'))
+            else:
+                reg_characterization = reg_characterization.set_index('peak_id')[['feature','ID']]
+                reg_characterization.columns=['reg_feature','reg_feature_id']
+                reg_characterization.loc[reg_characterization['reg_feature'].isna(),'reg_feature']='reg_NONE'
         reg_characterization=reg_characterization.add_prefix('regulatoryBuild_')
         
         # load and format homer annotation results
-        homer_annotation = pd.read_csv(input.homer_annotations,sep='\t', index_col=0)
-        homer_annotation = homer_annotation[['Annotation','Detailed Annotation','Distance to TSS','Nearest PromoterID','Entrez ID','Nearest Unigene','Nearest Refseq','Nearest Ensembl','Gene Name','Gene Alias','Gene Description','Gene Type']]
+        if is_empty_file(input.homer_annotations):
+            homer_annotation = pd.DataFrame(columns=['Annotation','Detailed Annotation','Distance to TSS','Nearest PromoterID','Entrez ID','Nearest Unigene','Nearest Refseq','Nearest Ensembl','Gene Name','Gene Alias','Gene Description','Gene Type'])
+            homer_annotation = homer_annotation.set_index(pd.Index([], name='peak_id'))
+        else:
+            try:
+                homer_annotation = pd.read_csv(input.homer_annotations,sep='\t', index_col=0)
+                if len(homer_annotation) == 0:
+                    homer_annotation = pd.DataFrame(columns=['Annotation','Detailed Annotation','Distance to TSS','Nearest PromoterID','Entrez ID','Nearest Unigene','Nearest Refseq','Nearest Ensembl','Gene Name','Gene Alias','Gene Description','Gene Type'])
+                    homer_annotation = homer_annotation.set_index(pd.Index([], name='peak_id'))
+                else:
+                    # Rename index to 'peak_id' for consistency
+                    homer_annotation.index.name = 'peak_id'
+                    # Check if required columns exist
+                    required_cols = ['Annotation','Detailed Annotation','Distance to TSS','Nearest PromoterID','Entrez ID','Nearest Unigene','Nearest Refseq','Nearest Ensembl','Gene Name','Gene Alias','Gene Description','Gene Type']
+                    available_cols = [col for col in required_cols if col in homer_annotation.columns]
+                    if len(available_cols) < len(required_cols):
+                        # Create missing columns with NaN
+                        for col in required_cols:
+                            if col not in homer_annotation.columns:
+                                homer_annotation[col] = None
+                    homer_annotation = homer_annotation[required_cols]
+            except (pd.errors.EmptyDataError, pd.errors.ParserError):
+                homer_annotation = pd.DataFrame(columns=['Annotation','Detailed Annotation','Distance to TSS','Nearest PromoterID','Entrez ID','Nearest Unigene','Nearest Refseq','Nearest Ensembl','Gene Name','Gene Alias','Gene Description','Gene Type'])
+                homer_annotation = homer_annotation.set_index(pd.Index([], name='peak_id'))
         homer_annotation = homer_annotation.add_prefix('homer_')
         
         # load and format bedtools annotation results
-        bedtools_annotation = pd.read_csv(input.bedtools_annotation, sep='\t', index_col = 3)
-        bedtools_annotation = bedtools_annotation.iloc[:,3:]
-        bedtools_annotation.columns = [col.split('_', 1)[-1].replace('at', 'AT').replace('gc', 'GC').replace('oth', 'otherBases') for col in bedtools_annotation.columns]
+        if is_empty_file(input.bedtools_annotation):
+            bedtools_annotation = pd.DataFrame()
+            bedtools_annotation = bedtools_annotation.set_index(pd.Index([], name='peak_id'))
+        else:
+            try:
+                bedtools_annotation = pd.read_csv(input.bedtools_annotation, sep='\t', index_col = 3)
+                if len(bedtools_annotation) == 0:
+                    bedtools_annotation = pd.DataFrame()
+                    bedtools_annotation = bedtools_annotation.set_index(pd.Index([], name='peak_id'))
+                else:
+                    # Rename index to 'peak_id' for consistency
+                    bedtools_annotation.index.name = 'peak_id'
+                    bedtools_annotation = bedtools_annotation.iloc[:,3:]
+                    bedtools_annotation.columns = [col.split('_', 1)[-1].replace('at', 'AT').replace('gc', 'GC').replace('oth', 'otherBases') for col in bedtools_annotation.columns]
+            except (pd.errors.EmptyDataError, pd.errors.ParserError, IndexError):
+                bedtools_annotation = pd.DataFrame()
+                bedtools_annotation = bedtools_annotation.set_index(pd.Index([], name='peak_id'))
         bedtools_annotation = bedtools_annotation.add_prefix('bedtools_')
 
-        # join results
-        base_character = gencode_characterization.join(homer_annotation)
-        base_character = base_character.join(reg_characterization)
-        base_character = base_character.join(bedtools_annotation)
+        # Get common index from gencode_characterization (base)
+        if len(gencode_characterization) > 0:
+            base_character = gencode_characterization.copy()
+        elif len(reg_characterization) > 0:
+            base_character = reg_characterization.copy()
+        elif len(homer_annotation) > 0:
+            base_character = homer_annotation.copy()
+        elif len(bedtools_annotation) > 0:
+            base_character = bedtools_annotation.copy()
+        else:
+            # All files are empty, create empty result
+            base_character = pd.DataFrame()
+            base_character.index.name = 'peak_id'
+        
+        # join results (only if DataFrames have overlapping indices or one is empty)
+        if len(base_character) > 0:
+            if len(homer_annotation) > 0:
+                base_character = base_character.join(homer_annotation, how='outer')
+            if len(reg_characterization) > 0:
+                base_character = base_character.join(reg_characterization, how='outer')
+            if len(bedtools_annotation) > 0:
+                base_character = base_character.join(bedtools_annotation, how='outer')
+        else:
+            # All empty, create empty DataFrame with all expected columns
+            all_cols = list(gencode_characterization.columns) + list(reg_characterization.columns) + list(homer_annotation.columns) + list(bedtools_annotation.columns)
+            base_character = pd.DataFrame(columns=all_cols)
+            base_character.index.name = 'peak_id'
         
         # replace whiteapaces in colnames with underscore
         base_character.columns = base_character.columns.str.replace(' ', '_')

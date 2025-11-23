@@ -377,7 +377,8 @@ elif config["alignment"].get("tool", "bowtie2") == "bwa-mem2":
                 else f"-q 30 -F {config['filtering']['sam_flag']} -L {config['refs']['whitelist']}"
             ),
         resources:
-            mem_mb=config["resources"].get("mem_mb", 64000),
+            mem_mb=64000,
+            runtime = 240,
         threads: 4*config["resources"].get("threads", 2)
         conda:
             "../envs/bwa.yaml",
@@ -439,6 +440,7 @@ rule samtools_process:
         mitochondria_name = config["refs"].get("mito_name", "chrM"),
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
+        runtime = 30,
     threads: config["resources"].get("threads", 1)
     conda:
         "../envs/bowtie2.yaml",
@@ -471,6 +473,7 @@ rule peak_calling:
         keep_dup = config["peaks"]["macs2_keep_dup"],
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
+        runtime = 20,
     threads: config["resources"].get("threads", 2)
     conda:
         "../envs/macs2_homer.yaml",
@@ -517,6 +520,7 @@ rule peak_annotation:
         genome = config["project"]["genome"],
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
+        runtime = 240,
     threads: config["resources"].get("threads", 2)
     conda:
         "../envs/macs2_homer.yaml",
@@ -589,6 +593,9 @@ rule merge_peaks:
         os.path.join(result_path, "summary", "peaks", "merged_peaks.bed"),
     threads:
         config["resources"].get("threads", 1)
+    resources:
+        mem_mb=1000,
+        runtime = 10,
     params:
         chrom_sizes = config["refs"]["chrom_sizes"],
     log:
@@ -609,6 +616,7 @@ rule aggregate_stats:
         os.path.join(result_path, 'results', "{sample}", '{sample}.stats.tsv'),
     resources:
         mem_mb=config["resources"].get("mem_mb", 1000),
+        runtime = 1,
     threads: config["resources"].get("threads", 2)
     log:
         "logs/rules/aggregate_stats_{sample}.log"

@@ -1,3 +1,2 @@
 default-resources:
-    slurm_partition: shortq
-    slurm_extra: "'--qos=shortq'"
+    slurm_partition: intel-sc3

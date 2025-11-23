@@ -11,6 +11,7 @@ rule collect_align_stats:
         report_tsv = os.path.join(result_path, 'report', 'align_stats_report.tsv')
     resources:
         mem_mb=config["resources"].get("mem_mb", 1000),
+        runtime = 1,
     threads: config["resources"].get("threads", 1)
     log:
         os.path.join("logs", "rules", "collect_align_stats.log")
@@ -45,6 +46,7 @@ rule symlink_sample_stats:
         flagstat_log = os.path.join(result_path, 'report', '{sample}.samtools_flagstat.log'),
     resources:
         mem_mb=config["resources"].get("mem_mb", 1000),
+        runtime = 1,
     threads: config["resources"].get("threads", 1)
     log:
         os.path.join("logs", "rules", "symlink_sample_stats_{sample}.log")
@@ -69,6 +71,7 @@ rule symlink_stats:
         peaks_xls = os.path.join(result_path, 'report', '{sample}_peaks.xls'),
     resources:
         mem_mb=config["resources"].get("mem_mb", 1000),
+        runtime = 1,
     threads: config["resources"].get("threads", 1)
     log:
         os.path.join("logs", "rules", "symlink_stats_{sample}.log")
@@ -109,6 +112,7 @@ rule multiqc:
         multiqc_configs = "{{'title': '{name}', 'intro_text': 'Quality Control Metrics of the ATAC-seq pipeline.', 'annotation': '{annot}', 'genome': '{genome}', 'exploratory_columns': {exploratory_columns}, 'skip_versions_section': true,'custom_content': {custom_content}}}".format(name = config["project"]["name"], annot = annotation_sheet_path, genome = config["project"]["genome"], exploratory_columns = config["project"].get("annot_columns", "[]"), custom_content = config.get("custom_content", "")),
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
+        runtime = 20,
     threads: config["resources"].get("threads", 2)
     conda:
         "../envs/multiqc.yaml",

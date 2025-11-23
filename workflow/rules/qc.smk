@@ -13,6 +13,7 @@ rule fastqc_1:
     threads: 2
     resources:
         mem_mb = 1024,
+        runtime = 20,
     wrapper:
         "v7.6.1/bio/fastqc"
 
@@ -30,6 +31,7 @@ rule fastqc_2:
     threads: 2
     resources:
         mem_mb = 1024,
+        runtime = 20,
     wrapper:
         "v7.6.1/bio/fastqc"
 
@@ -44,6 +46,9 @@ rule fastp:
         report_json = os.path.join(result_path,"report","{sample_run}_fastp.json"),
     conda: 
         "../envs/fastp.yaml"
+    resources:
+        mem_mb=16000,
+        runtime = 20,
     log:
         "logs/fastp/{sample_run}.fastp.json"
     threads: 4
@@ -66,7 +71,8 @@ rule tss_coverage:
         tss_slop = config["filtering"]["tss_slop"],
         noise_lower = config["filtering"]["noise_lower"],
     resources:
-        mem_mb=config["resources"].get("mem_mb", 16000),
+        mem_mb=16000,
+        runtime = 20,
     threads: config["resources"].get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
