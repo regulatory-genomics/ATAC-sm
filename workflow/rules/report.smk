@@ -33,7 +33,7 @@ rule collect_align_stats:
 rule symlink_sample_stats:
     input:
         align_stats = os.path.join(result_path, 'results', "{sample}", '{sample}.align.stats.tsv'),
-        mapped_log = os.path.join(result_path, 'bam', "{sample}", f'{sample}.{_ALIGNER_LOG_SUFFIX}'),
+        mapped_log = lambda w: os.path.join(result_path, 'bam', w.sample, f'{w.sample}.{_ALIGNER_LOG_SUFFIX}'),
         samblaster_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samblaster.log'),
         flagstat_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samtools_flagstat.log'),
     wildcard_constraints:
@@ -85,9 +85,9 @@ rule multiqc:
         expand(os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam"), sample=samples.keys()),
         expand(os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak"), sample=samples.keys()),
         expand(os.path.join(result_path, 'report', '{sample}_peaks.xls'), sample=samples.keys()), # representing symlinked stats
-        # Collect fastqc files from all runs (sample_run format)
-        expand(os.path.join(result_path, 'report', '{sample_run}_fastqc_1.html'), sample_run=annot.index.tolist()),
-        expand(os.path.join(result_path, 'report', '{sample_run}_fastqc_2.html'), sample_run=annot.index.tolist()),
+        # collect fastp report from all runs (sample_run format)
+        expand(os.path.join(result_path, 'report', '{sample_run}_fastp.html'), sample_run=annot.index.tolist()),
+        expand(os.path.join(result_path, 'report', '{sample_run}_fastp.json'), sample_run=annot.index.tolist()),
         # Collect per-sample stats and logs for MultiQC
         expand(os.path.join(result_path, 'report', '{sample}.align.stats.tsv'), sample=samples.keys()),
         expand(os.path.join(result_path, 'report', '{sample}.' + _ALIGNER_LOG_SUFFIX), sample=samples.keys()),

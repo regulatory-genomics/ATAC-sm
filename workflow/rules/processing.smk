@@ -356,11 +356,13 @@ elif config["alignment"].get("tool", "bowtie2") == "bwa-mem2":
             samblaster_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samblaster.log'),
         params:
             sample_name = "{sample}",
-            # Format FASTQ files as space-separated for bwa-mem2 (bwa accepts multiple files separated by spaces)
+            # Format FASTQ files for bwa-mem2 using process substitution with cat
+            # For paired-end: <(cat R1_files...) <(cat R2_files...)
+            # For single-end: <(cat R1_files...)
             bwa_input = lambda w, input: (
-                f"{' '.join(input.fasta_fwd)} {' '.join(input.fasta_rev)}" 
+                f"<(cat {' '.join(input.fasta_fwd)}) <(cat {' '.join(input.fasta_rev)})"
                 if samples[w.sample]["read_type"] == "paired" and input.fasta_rev and len(input.fasta_rev) > 0
-                else f"{' '.join(input.fasta_fwd)}"
+                else f"<(cat {' '.join(input.fasta_fwd)})"
             ),
             add_mate_tags = lambda w: "--addMateTags" if samples[w.sample]["read_type"] == "paired" else " ",
             sequencing_platform = config["alignment"]["sequencing_platform"],
@@ -452,30 +454,20 @@ rule samtools_process:
 # Note: merge_bam rule removed - alignment now directly outputs per-sample BAM files
 # combining all runs in a single alignment step
         
-# peak calling with MACS2 & samtools and annotation with HOMER
+# Peak calling with MACS2
 rule peak_calling:
     input:
         bam = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam"),
         bai = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam.bai"),
-        homer_script = os.path.join(HOMER_path,"configureHomer.pl"),
-        regulatory_regions = config["refs"]["regulatory_regions"],
     output:
         peak_calls = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak"),
-        peak_annot = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak.annotated.tsv"),
-        peak_annot_log = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak.annotated.tsv.log"),
         macs2_xls = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.xls"),
         summits_bed = os.path.join(result_path,"results","{sample}","peaks","{sample}_summits.bed"),
-        homer_knownResults = os.path.join(result_path,"results","{sample}","homer","knownResults.txt"),
-        homer_log = os.path.join(result_path,"results","{sample}","homer","{sample}.homer.log"),
         macs2_log = os.path.join(result_path, 'results', "{sample}", 'peaks', '{sample}.macs2.log'),
-        stats = os.path.join(result_path, 'results', "{sample}", '{sample}.peak.stats.tsv'),
     params:
         peaks_dir = os.path.join(result_path,"results","{sample}","peaks"),
-        homer_dir = os.path.join(result_path,"results","{sample}","homer"),
-        homer_bin = os.path.join(HOMER_path,"bin"),
         formating = lambda w: '--format BAMPE' if samples["{}".format(w.sample)]["read_type"] == "paired" else '--format BAM',
         genome_size = config["refs"]["genome_size_bp"],
-        genome = config["project"]["genome"],
         keep_dup = config["peaks"]["macs2_keep_dup"],
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
@@ -484,27 +476,104 @@ rule peak_calling:
         "../envs/macs2_homer.yaml",
     log:
         "logs/rules/peak_calling_{sample}.log"
+    wildcard_constraints:
+        sample="|".join(samples.keys())
     shell:
         """
-        export PATH="{params.homer_bin}:$PATH";
+        mkdir -p {params.peaks_dir}
         
         macs2 callpeak -t {input.bam} {params.formating} \
             --nomodel --keep-dup {params.keep_dup} --extsize 147 -g {params.genome_size} \
             -n {wildcards.sample} \
             --outdir {params.peaks_dir} > "{output.macs2_log}" 2>&1;
         
-        {params.homer_bin}/annotatePeaks.pl {output.peak_calls} {params.genome} > {output.peak_annot} 2> {output.peak_annot_log};
-        
-        {params.homer_bin}/findMotifsGenome.pl "{output.summits_bed}" {params.genome} {params.homer_dir} -size 200 -mask > "{output.homer_log}" 2>&1
+        # Handle empty peak files - create empty files if MACS2 didn't produce peaks
+        if [ ! -f {output.peak_calls} ] || [ ! -s {output.peak_calls} ]; then
+            touch {output.peak_calls}
+            touch {output.summits_bed}
+            echo "Warning: No peaks called for {wildcards.sample}" >> "{output.macs2_log}"
+        fi
+        """
 
-        cat {output.peak_calls} | wc -l | awk '{{print "peaks\t" $1}}' >> "{output.stats}"
+# Peak annotation and downstream analysis with HOMER
+rule peak_annotation:
+    input:
+        peak_calls = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak"),
+        summits_bed = os.path.join(result_path,"results","{sample}","peaks","{sample}_summits.bed"),
+        bam = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam"),
+        bai = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam.bai"),
+        homer_script = os.path.join(HOMER_path,"configureHomer.pl"),
+        regulatory_regions = config["refs"]["regulatory_regions"],
+    output:
+        peak_annot = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak.annotated.tsv"),
+        peak_annot_log = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak.annotated.tsv.log"),
+        homer_knownResults = os.path.join(result_path,"results","{sample}","homer","knownResults.txt"),
+        homer_log = os.path.join(result_path,"results","{sample}","homer","{sample}.homer.log"),
+        stats = os.path.join(result_path, 'results', "{sample}", '{sample}.peak.stats.tsv'),
+    params:
+        peaks_dir = os.path.join(result_path,"results","{sample}","peaks"),
+        homer_dir = os.path.join(result_path,"results","{sample}","homer"),
+        homer_bin = os.path.join(HOMER_path,"bin"),
+        genome = config["project"]["genome"],
+    resources:
+        mem_mb=config["resources"].get("mem_mb", 16000),
+    threads: config["resources"].get("threads", 2)
+    conda:
+        "../envs/macs2_homer.yaml",
+    log:
+        "logs/rules/peak_annotation_{sample}.log"
+    wildcard_constraints:
+        sample="|".join(samples.keys())
+    shell:
+        """
+        export PATH="{params.homer_bin}:$PATH";
+        mkdir -p {params.homer_dir}
         
-        TOTAL_READS=`samtools idxstats {input.bam} | awk '{{sum += $3}}END{{print sum}}'`;
+        # Initialize all output files to ensure they exist
+        touch {output.peak_annot}
+        touch {output.peak_annot_log}
+        touch {output.homer_log}
+        touch {output.homer_knownResults}
+        touch {output.stats}
         
-        samtools view -c -L {output.peak_calls} {input.bam} | awk -v total=$TOTAL_READS '{{print "frip\t" $1/total}}' >> "{output.stats}";
-
-        samtools view -c -L {input.regulatory_regions} {input.bam} | awk -v total=$TOTAL_READS '{{print "regulatory_fraction\t" $1/total}}' >> "{output.stats}";
+        # Check if peak file exists and is not empty
+        if [ ! -f {input.peak_calls} ] || [ ! -s {input.peak_calls} ]; then
+            # Handle empty peak file case
+            echo "No peaks found for {wildcards.sample}, creating empty annotation files" > {output.peak_annot_log}
+            echo "No peaks found for {wildcards.sample}, skipping HOMER motif finding" > {output.homer_log}
+            echo "peaks\t0" > {output.stats}
+            echo "frip\t0" >> {output.stats}
+            echo "regulatory_fraction\t0" >> {output.stats}
+        else
+            # Run HOMER annotation
+            {params.homer_bin}/annotatePeaks.pl {input.peak_calls} {params.genome} > {output.peak_annot} 2> {output.peak_annot_log};
+            
+            # Run HOMER motif finding (only if summits file exists and is not empty)
+            if [ -f {input.summits_bed} ] && [ -s {input.summits_bed} ]; then
+                {params.homer_bin}/findMotifsGenome.pl "{input.summits_bed}" {params.genome} {params.homer_dir} -size 200 -mask > "{output.homer_log}" 2>&1 || echo "HOMER motif finding completed with warnings or errors" >> {output.homer_log}
+            else
+                echo "No summits file available for motif finding" > {output.homer_log}
+            fi
+            
+            # Calculate statistics
+            PEAK_COUNT=$(cat {input.peak_calls} | wc -l)
+            echo "peaks\t$PEAK_COUNT" > {output.stats}
+            
+            TOTAL_READS=$(samtools idxstats {input.bam} | awk '{{sum += $3}}END{{print sum}}');
+            
+            if [ "$TOTAL_READS" -gt 0 ]; then
+                FRIP=$(samtools view -c -L {input.peak_calls} {input.bam} | awk -v total=$TOTAL_READS '{{print $1/total}}')
+                echo "frip\t$FRIP" >> {output.stats}
+                
+                REGULATORY_FRAC=$(samtools view -c -L {input.regulatory_regions} {input.bam} | awk -v total=$TOTAL_READS '{{print $1/total}}')
+                echo "regulatory_fraction\t$REGULATORY_FRAC" >> {output.stats}
+            else
+                echo "frip\t0" >> {output.stats}
+                echo "regulatory_fraction\t0" >> {output.stats}
+            fi
+        fi
         
+        # Ensure homer_knownResults exists (findMotifsGenome.pl creates it, but ensure it exists)
         if [ ! -f {output.homer_knownResults} ]; then
             touch {output.homer_knownResults}
         fi

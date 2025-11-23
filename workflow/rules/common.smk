@@ -9,8 +9,37 @@ def get_units_fastqs(wildcards):
     u = annot.loc[wildcards.sample_run]
     fq1 = u["R1"]
     fq2 = u["R2"]
+    
+    # Handle PEP derive modifier expansion (raw_data| prefix)
+    # PEP should expand this automatically, but if not, expand it manually
+    def expand_pep_path(path):
+        """Expand PEP derive modifier paths like raw_data|filename"""
+        if pd.isna(path) or not isinstance(path, str):
+            return path
+        if "|" in path:
+            prefix, filename = path.split("|", 1)
+            # Try config paths first (already merged from PEP)
+            if prefix == "raw_data" and "paths" in config and "data_dir" in config["paths"]:
+                return os.path.join(config["paths"]["data_dir"], filename)
+            # Fallback: try to get from PEP project config directly
+            try:
+                if 'sample_modifiers' in pep_project.config:
+                    sources = pep_project.config.get('sample_modifiers', {}).get('derive', {}).get('sources', {})
+                    if prefix in sources:
+                        return os.path.join(sources[prefix], filename)
+            except:
+                pass
+        # Ensure absolute path
+        if path and not os.path.isabs(path):
+            return os.path.abspath(path)
+        return path
+    
+    fq1 = expand_pep_path(fq1)
+    fq2 = expand_pep_path(fq2)
+    
     if pd.isna(fq2):
         fq2 = None
+    
     return [fq1, fq2]
 
 def get_all_fastqs_for_sample(sample_name):

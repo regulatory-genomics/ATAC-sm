@@ -3,7 +3,7 @@ project:
   name: macrophage_atac
   genome: hg38
   # Output directory (can use {process_dir} placeholder from PEP)
-  out_dir: {process_dir}/20251120_ATAC_test1
+  out_dir: "{process_dir}/20251120_ATAC_test1"
   # Sample sheet / Annotation file (managed by PEP)
   samples: ../config/annotation.csv
   pep_config: ../pep/project_config.yaml
@@ -19,7 +19,7 @@ resources:
 adapters:
   sequence: "CTGTCTCTTATA" # Nextera
   # Used by Bowtie2 if provided (uses {database_dir} from PEP)
-  fasta: {database_dir}/hg38/nextera_adapters.fa
+  fasta: "{database_dir}/hg38/nextera_adapters.fa"
 
 # 2. Alignment Strategy
 alignment:
@@ -37,14 +37,14 @@ alignment:
   # Tool Specifics
   bwa:
     # Uses {shared_genome_dir} from PEP
-    index: {shared_genome_dir}/bwa-mem2/GRCh38
+    index: "{shared_genome_dir}/bwa-mem2/GRCh38"
     min_score: null
     threads: null # null = defaults
     extra_args: ""
   
   bowtie2:
     # Uses {database_dir} from PEP
-    index: {database_dir}/hg38/indices_for_Bowtie2/hg38
+    index: "{database_dir}/hg38/indices_for_Bowtie2/hg38"
 
 # 3. Filtering & QC
 filtering:
@@ -73,19 +73,19 @@ annotation:
 # Paths to static resources (uses {database_dir} from PEP)
 refs:
   # Base Genomes
-  fasta: {database_dir}/hg38/hg38.fa
-  chrom_sizes: {database_dir}/hg38/hg38.chromSizes
+  fasta: "{database_dir}/hg38/hg38.fa"
+  chrom_sizes: "{database_dir}/hg38/hg38.chromSizes"
   genome_size_bp: 2747877777
   mito_name: chrM
 
   # Feature Files
-  blacklist: {database_dir}/hg38/hg38-ENCODE_blacklist.sorted.v3.bed
-  whitelist: {database_dir}/hg38/hg38-ENCODE_whitelist.sorted.v3.bed
-  unique_tss: {database_dir}/hg38/hg38_gencode_tss_unique.sorted.bed
-  regulatory_regions: {database_dir}/hg38/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.chromosomes_only.20161111.bed
+  blacklist: "{database_dir}/hg38/hg38-ENCODE_blacklist.sorted.v3.bed"
+  whitelist: "{database_dir}/hg38/hg38-ENCODE_whitelist.sorted.v3.bed"
+  unique_tss: "{database_dir}/hg38/hg38_gencode_tss_unique.sorted.bed"
+  regulatory_regions: "{database_dir}/hg38/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.chromosomes_only.20161111.bed"
 
   # GTF Annotations
-  gencode_gtf: {database_dir}/hg38/gencode.v38.basic.annotation.gtf
-  regulatory_gtf: {database_dir}/hg38/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.20210107.gtf
+  gencode_gtf: "{database_dir}/hg38/gencode.v38.basic.annotation.gtf"
+  regulatory_gtf: "{database_dir}/hg38/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.20210107.gtf"
 
 

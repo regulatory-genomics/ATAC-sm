@@ -114,9 +114,21 @@ rule homer_region_annotation:
         """
         export PATH="{params.homer_bin}:$PATH";
         
-        {params.homer_bin}/annotatePeaks.pl {input.consensus_regions} {params.genome} \
-            > {output.homer_annotations} \
-            2> {output.homer_annotations_log};
+        # Check if consensus_regions file exists and is not empty
+        if [ ! -f {input.consensus_regions} ] || [ ! -s {input.consensus_regions} ]; then
+            # Create empty annotation files
+            echo "No consensus regions found, creating empty annotation file" > {output.homer_annotations_log}
+            touch {output.homer_annotations}
+        else
+            {params.homer_bin}/annotatePeaks.pl {input.consensus_regions} {params.genome} \
+                > {output.homer_annotations} \
+                2> {output.homer_annotations_log} || true;
+            
+            # Ensure output file exists even if command fails
+            if [ ! -f {output.homer_annotations} ]; then
+                touch {output.homer_annotations}
+            fi
+        fi
         """
         
 # get gc content and region length

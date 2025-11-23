@@ -35,12 +35,13 @@ rule fastqc_2:
 
 rule fastp:
     input:
-        get_units_fastqs,
+        r1 = lambda w: get_units_fastqs(w)[0],
+        r2 = lambda w: get_units_fastqs(w)[1],
     output:
         r1 = temp(os.path.join(result_path,"trimmed","{sample_run}_1.fq.gz")),
-        r2 = temp(os.path.join(result_path,"trimmed","{sample_run}_2.fq.gz"))
-        report_html = os.path.join(result_path,"report","{sample_run}_fastp.html")
-        report_json = os.path.join(result_path,"report","{sample_run}_fastp.json")
+        r2 = temp(os.path.join(result_path,"trimmed","{sample_run}_2.fq.gz")),
+        report_html = os.path.join(result_path,"report","{sample_run}_fastp.html"),
+        report_json = os.path.join(result_path,"report","{sample_run}_fastp.json"),
     conda: 
         "../envs/fastp.yaml"
     log:
