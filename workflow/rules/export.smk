@@ -15,7 +15,7 @@ rule env_export:
         "../envs/{env}.yaml"
     resources:
         mem_mb=config["resources"]["mem_mb"],
-        runtime = 1,
+        runtime = 5,
     threads: config["resources"]["threads"]
     log:
         os.path.join("logs","rules","env_{env}.log"),
@@ -39,7 +39,7 @@ rule config_export:
                         )
     resources:
         mem_mb=config["resources"]["mem_mb"],
-        runtime = 1,
+        runtime = 5,
     threads: config["resources"]["threads"]
     log:
         os.path.join("logs","rules","config_export.log"),

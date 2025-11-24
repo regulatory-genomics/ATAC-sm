@@ -11,7 +11,7 @@ project:
 
 ##### WORKFLOW RESOURCES #####
 resources:
-  mem_mb: 256000
+  mem_mb: 4000
   threads: 2
 
 ##### PIPELINE STEPS #####

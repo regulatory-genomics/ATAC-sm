@@ -11,7 +11,7 @@ rule collect_align_stats:
         report_tsv = os.path.join(result_path, 'report', 'align_stats_report.tsv')
     resources:
         mem_mb=config["resources"].get("mem_mb", 1000),
-        runtime = 1,
+        runtime = 10
     threads: config["resources"].get("threads", 1)
     log:
         os.path.join("logs", "rules", "collect_align_stats.log")
@@ -46,7 +46,7 @@ rule symlink_sample_stats:
         flagstat_log = os.path.join(result_path, 'report', '{sample}.samtools_flagstat.log'),
     resources:
         mem_mb=config["resources"].get("mem_mb", 1000),
-        runtime = 1,
+        runtime = 10,
     threads: config["resources"].get("threads", 1)
     log:
         os.path.join("logs", "rules", "symlink_sample_stats_{sample}.log")
@@ -71,7 +71,7 @@ rule symlink_stats:
         peaks_xls = os.path.join(result_path, 'report', '{sample}_peaks.xls'),
     resources:
         mem_mb=config["resources"].get("mem_mb", 1000),
-        runtime = 1,
+        runtime = 10,
     threads: config["resources"].get("threads", 1)
     log:
         os.path.join("logs", "rules", "symlink_stats_{sample}.log")

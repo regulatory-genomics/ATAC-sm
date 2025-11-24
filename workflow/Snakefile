@@ -148,6 +148,7 @@ rule all:
         configs = os.path.join(result_path,'configs','{}_config.yaml'.format(config["project"]["name"])),
         annotations = os.path.join(result_path,'configs','{}_annot.csv'.format(config["project"]["name"])),
         merged_peaks = os.path.join(result_path,"summary","peaks","merged_peaks.bed"),
+        tracks_out = expand(os.path.join(result_path, "tracks", "{sample}.bw"), sample=list(samples.keys())),
     resources:
         mem_mb=config["resources"]["mem_mb"],
     threads: config["resources"]["threads"]

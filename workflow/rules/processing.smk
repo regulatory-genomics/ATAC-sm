@@ -378,7 +378,7 @@ elif config["alignment"].get("tool", "bowtie2") == "bwa-mem2":
             ),
         resources:
             mem_mb=64000,
-            runtime = 240,
+            runtime = 800,
         threads: 4*config["resources"].get("threads", 2)
         conda:
             "../envs/bwa.yaml",
@@ -440,7 +440,7 @@ rule samtools_process:
         mitochondria_name = config["refs"].get("mito_name", "chrM"),
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
-        runtime = 30,
+        runtime = 90,
     threads: config["resources"].get("threads", 1)
     conda:
         "../envs/bowtie2.yaml",
@@ -473,7 +473,7 @@ rule peak_calling:
         keep_dup = config["peaks"]["macs2_keep_dup"],
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
-        runtime = 20,
+        runtime = 60,
     threads: config["resources"].get("threads", 2)
     conda:
         "../envs/macs2_homer.yaml",
@@ -595,7 +595,7 @@ rule merge_peaks:
         config["resources"].get("threads", 1)
     resources:
         mem_mb=1000,
-        runtime = 10,
+        runtime = 30,
     params:
         chrom_sizes = config["refs"]["chrom_sizes"],
     log:
@@ -623,4 +623,28 @@ rule aggregate_stats:
     shell:
         """
         cat {input.peak_stats} > {output}
+        """
+
+
+# Generate bigWig tracks from BAM files for visualization
+rule tracks:
+    input:
+        bam = os.path.join(result_path, "bam", "{sample}", "{sample}.filtered.bam"),
+        bai = os.path.join(result_path, "bam", "{sample}", "{sample}.filtered.bam.bai"),
+    output:
+        bw = os.path.join(result_path, "tracks", "{sample}.bw"),
+    conda:
+        "../envs/dtools.yaml"
+    resources:
+        mem_mb=config["resources"].get("mem_mb", 16000),
+        runtime = 120,
+    threads: 8
+    wildcard_constraints:
+        sample="|".join(samples.keys())  # Only match actual sample names
+    log:
+        os.path.join("logs","rules","tracks_{sample}.log"),
+    shell:
+        """
+        mkdir -p $(dirname {output.bw})
+        bamCoverage -b {input.bam} -o {output.bw} --binSize 10 --smoothLength 50 --normalizeUsing CPM -p {threads} 2> {log}
         """

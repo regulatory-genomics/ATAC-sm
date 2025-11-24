@@ -48,7 +48,7 @@ rule fastp:
         "../envs/fastp.yaml"
     resources:
         mem_mb=16000,
-        runtime = 20,
+        runtime = 60,
     log:
         "logs/fastp/{sample_run}.fastp.json"
     threads: 4

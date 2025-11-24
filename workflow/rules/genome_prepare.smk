@@ -10,7 +10,7 @@ rule get_genome_fai:
         "../envs/bowtie2.yaml"
     resources:
         mem_mb=1000,
-        runtime = 10,
+        runtime = 20,
     shell:
         """
         mkdir -p $(dirname {output.fai})
