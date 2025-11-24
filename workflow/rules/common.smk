@@ -66,4 +66,6 @@ def get_quantifications(wildcards):
         paths = expand(os.path.join(result_path, "downstream_res", "quantification", "{sample}_quantification_promoter_counts.csv"), sample=samples.keys())
     elif wildcards.kind=="TSS":
         paths = expand(os.path.join(result_path, "downstream_res", "quantification", "{sample}_quantification_TSS_counts.csv"), sample=samples.keys())
+    else:
+        raise ValueError(f"Unsupported quantification kind '{wildcards.kind}'. Expected one of support, consensus, promoter, TSS.")
     return paths

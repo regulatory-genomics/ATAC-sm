@@ -103,6 +103,8 @@ rule quantify_counts_sample:
 rule quantify_aggregate:
     input:
         get_quantifications,
+    wildcard_constraints:
+        kind="support|consensus|promoter|TSS"
     output:
         os.path.join(result_path,"downstream_res","quantification","{kind}_counts.csv"),
     resources:

@@ -64,6 +64,8 @@ rule symlink_stats:
         tss_csv = os.path.join(result_path, 'report', "peaks_stats", '{sample}.tss_histogram.csv'),
         macs2_log = os.path.join(result_path, 'report', "peaks_stats", '{sample}.macs2.log'),
         peaks_xls = os.path.join(result_path, 'report', "peaks_stats", '{sample}_peaks.xls'),
+    wildcard_constraints:
+        sample="|".join(samples.keys())
     output:
         stats_tsv = os.path.join(result_path, 'report', '{sample}.stats.tsv'),
         tss_csv = os.path.join(result_path, 'report', '{sample}_TSS.csv'),
@@ -150,6 +152,8 @@ rule plot_sample_annotation:
 rule aggregate_stats:
     input:
         peak_stats = os.path.join(result_path, 'report', "peaks_stats", '{sample}.peak.stats.tsv'),
+    wildcard_constraints:
+        sample="|".join(samples.keys())
     output:
         os.path.join(result_path, 'report', "peaks_stats", '{sample}.stats.tsv'),
     resources:
