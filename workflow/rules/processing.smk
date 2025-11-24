@@ -6,14 +6,13 @@ has_prealignments = prealign_enabled and len(prealignments) > 0
 def _trimmed_fastq_paths(sample_run):
     if annot.loc[sample_run, "read_type"] == "paired":
         return (
-            os.path.join(result_path, "trimmed", f"{sample_run}_1.fq.gz"),
-            os.path.join(result_path, "trimmed", f"{sample_run}_2.fq.gz"),
+            os.path.join(result_path, "middle_files", "trimmed", f"{sample_run}_1.fq.gz"),
+            os.path.join(result_path, "middle_files", "trimmed", f"{sample_run}_2.fq.gz"),
         )
     return (
-        os.path.join(result_path, "trimmed", f"{sample_run}.fq.gz"),
+        os.path.join(result_path, "middle_files", "trimmed", f"{sample_run}.fq.gz"),
         None,
     )
-
 
 def _prealigned_fastq_paths(sample_run):
     base_dir = os.path.join(result_path, "results", sample_run, "prealign")
@@ -275,11 +274,11 @@ if config["alignment"].get("tool", "bowtie2") == "bowtie2":
         wildcard_constraints:
             sample="|".join(samples.keys())  # Only match actual sample names
         output:
-            bam = temp(os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam")),
-            bai = temp(os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam.bai")),
-            bowtie_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.bowtie2.log'),
-            bowtie_met = os.path.join(result_path, 'bam', "{sample}", '{sample}.bowtie2.met'),
-            samblaster_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samblaster.log'),
+            bam = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam"),
+            bai = os.path.join(result_path,"important_processed","bam", "{sample}.filtered.bam.bai"),
+            bowtie_log = os.path.join(result_path, "logs",'align', '{sample}.bowtie2.log'),
+            bowtie_met = os.path.join(result_path, "logs", 'align',  '{sample}.bowtie2.met'),
+            samblaster_log = os.path.join(result_path, "logs", 'align',  '{sample}.samblaster.log'),
         params:
             sample_name = "{sample}",
             # Format FASTQ files as comma-separated lists for bowtie2
@@ -350,15 +349,16 @@ elif config["alignment"].get("tool", "bowtie2") == "bwa-mem2":
         wildcard_constraints:
             sample="|".join(samples.keys())  # Only match actual sample names
         output:
-            bam = temp(os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam")),
-            bai = temp(os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam.bai")),
-            bwa_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.bwa.log'),
-            samblaster_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samblaster.log'),
+            bam = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam"),
+            bai = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam.bai"),
+            bwa_log = os.path.join(result_path, 'logs', 'align', "{sample}", '{sample}.bwa.log'),
+            samblaster_log = os.path.join(result_path, 'logs', 'align', "{sample}", '{sample}.samblaster.log'),
         params:
             sample_name = "{sample}",
             # Format FASTQ files for bwa-mem2 using process substitution with cat
             # For paired-end: <(cat R1_files...) <(cat R2_files...)
             # For single-end: <(cat R1_files...)
+            # Maybe there is better way to do this?
             bwa_input = lambda w, input: (
                 f"<(cat {' '.join(input.fasta_fwd)}) <(cat {' '.join(input.fasta_rev)})"
                 if samples[w.sample]["read_type"] == "paired" and input.fasta_rev and len(input.fasta_rev) > 0
@@ -430,12 +430,12 @@ rule bwa_mem2_index:
 # Generate alignment stats for per-sample BAM files
 rule samtools_process:
     input:
-        bam = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam"),
-        bai = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam.bai"),
+        bam = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam"),
+        bai = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam.bai"),
     output:
-        samtools_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samtools.log'),
-        samtools_flagstat_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samtools_flagstat.log'),
-        stats = os.path.join(result_path, 'results', "{sample}", '{sample}.align.stats.tsv'),
+        samtools_log = os.path.join(result_path, 'logs', 'align', '{sample}.samtools.log'),
+        samtools_flagstat_log = os.path.join(result_path, 'logs', 'align', '{sample}.samtools_flagstat.log'),
+        stats = os.path.join(result_path, 'report', 'align_stats', '{sample}.align.stats.tsv'),
     params:
         mitochondria_name = config["refs"].get("mito_name", "chrM"),
     resources:
@@ -459,15 +459,15 @@ rule samtools_process:
 # Peak calling with MACS2
 rule peak_calling:
     input:
-        bam = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam"),
-        bai = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam.bai"),
+        bam = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam"),
+        bai = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam.bai"),
     output:
-        peak_calls = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak"),
-        macs2_xls = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.xls"),
-        summits_bed = os.path.join(result_path,"results","{sample}","peaks","{sample}_summits.bed"),
-        macs2_log = os.path.join(result_path, 'results', "{sample}", 'peaks', '{sample}.macs2.log'),
+        peak_calls = os.path.join(result_path,"important_processed","peaks","{sample}_peaks.narrowPeak"),
+        macs2_xls = os.path.join(result_path,"important_processed","peaks","{sample}_peaks.xls"),
+        summits_bed = os.path.join(result_path,"important_processed","peaks","{sample}_summits.bed"),
+        macs2_log = os.path.join(result_path, 'important_processed', 'peaks', '{sample}.macs2.log'),
     params:
-        peaks_dir = os.path.join(result_path,"results","{sample}","peaks"),
+        peaks_dir = os.path.join(result_path,"important_processed","peaks"),
         formating = lambda w: '--format BAMPE' if samples["{}".format(w.sample)]["read_type"] == "paired" else '--format BAM',
         genome_size = config["refs"]["genome_size_bp"],
         keep_dup = config["peaks"]["macs2_keep_dup"],
@@ -501,21 +501,21 @@ rule peak_calling:
 # Peak annotation and downstream analysis with HOMER
 rule peak_annotation:
     input:
-        peak_calls = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak"),
-        summits_bed = os.path.join(result_path,"results","{sample}","peaks","{sample}_summits.bed"),
-        bam = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam"),
-        bai = os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam.bai"),
+        peak_calls = os.path.join(result_path,"important_processed","peaks","{sample}_peaks.narrowPeak"),
+        summits_bed = os.path.join(result_path,"important_processed","peaks","{sample}_summits.bed"),
+        bam = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam"),
+        bai = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam.bai"),
         homer_script = os.path.join(HOMER_path,"configureHomer.pl"),
         regulatory_regions = config["refs"]["regulatory_regions"],
     output:
-        peak_annot = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak.annotated.tsv"),
-        peak_annot_log = os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak.annotated.tsv.log"),
-        homer_knownResults = os.path.join(result_path,"results","{sample}","homer","knownResults.txt"),
-        homer_log = os.path.join(result_path,"results","{sample}","homer","{sample}.homer.log"),
-        stats = os.path.join(result_path, 'results', "{sample}", '{sample}.peak.stats.tsv'),
+        peak_annot = os.path.join(result_path,"important_processed","peaks","{sample}_peaks.narrowPeak.annotated.tsv"),
+        peak_annot_log = os.path.join(result_path,"important_processed","peaks","{sample}_peaks.narrowPeak.annotated.tsv.log"),
+        homer_knownResults = os.path.join(result_path,"downstream_res","homer","{sample}","knownResults.txt"),
+        homer_log = os.path.join(result_path,"downstream_res","homer","{sample}.homer.log"),
+        stats = os.path.join(result_path, 'report', 'peaks_stats', '{sample}.peak.stats.tsv'),
     params:
-        peaks_dir = os.path.join(result_path,"results","{sample}","peaks"),
-        homer_dir = os.path.join(result_path,"results","{sample}","homer"),
+        peaks_dir = os.path.join(result_path,"important_processed","peaks"),
+        homer_dir = os.path.join(result_path,"downstream_res","homer","{sample}"),
         homer_bin = os.path.join(HOMER_path,"bin"),
         genome = config["project"]["genome"],
     resources:
@@ -586,11 +586,11 @@ rule peak_annotation:
 rule merge_peaks:
     input:
         peak_calls = expand(
-            os.path.join(result_path, "results", "{sample}", "peaks", "{sample}_peaks.narrowPeak"),
+            os.path.join(result_path, "important_processed", "peaks", "{sample}_peaks.narrowPeak"),
             sample=list(samples.keys()),
         )
     output:
-        os.path.join(result_path, "summary", "peaks", "merged_peaks.bed"),
+        os.path.join(result_path, "downstream_res", "merged_peaks", "merged_peaks.bed"),
     threads:
         config["resources"].get("threads", 1)
     resources:
@@ -609,30 +609,13 @@ rule merge_peaks:
             {input.peak_calls}
         """
 
-rule aggregate_stats:
-    input:
-        peak_stats = os.path.join(result_path, 'results', "{sample}", '{sample}.peak.stats.tsv'),
-    output:
-        os.path.join(result_path, 'results', "{sample}", '{sample}.stats.tsv'),
-    resources:
-        mem_mb=config["resources"].get("mem_mb", 1000),
-        runtime = 1,
-    threads: config["resources"].get("threads", 2)
-    log:
-        "logs/rules/aggregate_stats_{sample}.log"
-    shell:
-        """
-        cat {input.peak_stats} > {output}
-        """
-
-
 # Generate bigWig tracks from BAM files for visualization
 rule tracks:
     input:
-        bam = os.path.join(result_path, "bam", "{sample}", "{sample}.filtered.bam"),
-        bai = os.path.join(result_path, "bam", "{sample}", "{sample}.filtered.bam.bai"),
+        bam = os.path.join(result_path, "important_processed", "bam", "{sample}.filtered.bam"),
+        bai = os.path.join(result_path, "important_processed", "bam", "{sample}.filtered.bam.bai"),
     output:
-        bw = os.path.join(result_path, "tracks", "{sample}.bw"),
+        bw = os.path.join(result_path, "important_processed", "tracks", "{sample}.bw"),
     conda:
         "../envs/dtools.yaml"
     resources:

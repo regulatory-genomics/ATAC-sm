@@ -1,56 +1,20 @@
 
-rule fastqc_1:
-    input:
-        lambda w: get_units_fastqs(w)[0],
-    output:
-        html=os.path.join(result_path,"report","{sample_run}_fastqc_1.html"),
-        zip=os.path.join(result_path,"report","{sample_run}_fastqc_1.zip"), # the suffix _fastqc.zip is necessary for multiqc to find the file. If not using multiqc, you are free to choose an arbitrary filename
-    params:
-        extra="--quiet",
-        mem_overhead_factor=0.1,
-    log:
-        "logs/rules/fastqc/{sample_run}.log",
-    threads: 2
-    resources:
-        mem_mb = 1024,
-        runtime = 20,
-    wrapper:
-        "v7.6.1/bio/fastqc"
-
-rule fastqc_2:
-    input:
-        lambda w: get_units_fastqs(w)[1],
-    output:
-        html=os.path.join(result_path,"report","{sample_run}_fastqc_2.html"),
-        zip=os.path.join(result_path,"report","{sample_run}_fastqc_2.zip"), # the suffix _fastqc.zip is necessary for multiqc to find the file. If not using multiqc, you are free to choose an arbitrary filename
-    params:
-        extra="--quiet",
-        mem_overhead_factor=0.1,
-    log:
-        "logs/rules/fastqc/{sample_run}.log",
-    threads: 2
-    resources:
-        mem_mb = 1024,
-        runtime = 20,
-    wrapper:
-        "v7.6.1/bio/fastqc"
-
 rule fastp:
     input:
         r1 = lambda w: get_units_fastqs(w)[0],
         r2 = lambda w: get_units_fastqs(w)[1],
     output:
-        r1 = temp(os.path.join(result_path,"trimmed","{sample_run}_1.fq.gz")),
-        r2 = temp(os.path.join(result_path,"trimmed","{sample_run}_2.fq.gz")),
-        report_html = os.path.join(result_path,"report","{sample_run}_fastp.html"),
-        report_json = os.path.join(result_path,"report","{sample_run}_fastp.json"),
+        r1 = temp(os.path.join(result_path,"middle_files","trimmed","{sample_run}_1.fq.gz")),
+        r2 = temp(os.path.join(result_path,"middle_files","trimmed","{sample_run}_2.fq.gz")),
+        report_html = os.path.join(result_path,"report","fastp","{sample_run}_fastp.html"),
+        report_json = os.path.join(result_path,"report","fastp","{sample_run}_fastp.json"),
     conda: 
         "../envs/fastp.yaml"
     resources:
         mem_mb=16000,
         runtime = 60,
     log:
-        "logs/fastp/{sample_run}.fastp.json"
+        "logs/rules/fastp/{sample_run}.fastp.json"
     threads: 4
     shell:
         "fastp -i {input.r1} -I {input.r2} -o {output.r1} -O {output.r2} --detect_adapter_for_pe --trim_poly_g  --thread {threads} -j {output.report_json} -h {output.report_html}"
@@ -58,12 +22,12 @@ rule fastp:
 
 rule tss_coverage:
     input:
-        bam = os.path.join(result_path,"bam","{sample}","{sample}.filtered.bam"),
-        bai = os.path.join(result_path,"bam","{sample}","{sample}.filtered.bam.bai"),
+        bam = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam"),
+        bai = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam.bai"),
         chromosome_sizes = config["refs"]["chrom_sizes"],
         unique_tss = config["refs"]["unique_tss"],
     output:
-        tss_hist = os.path.join(result_path,"results","{sample}","{sample}.tss_histogram.csv"),
+        tss_hist = os.path.join(result_path,"report","tss_coverage","{sample}.tss_histogram.csv"),
     params:
         noise_upper = ( config["filtering"]["tss_slop"] * 2 ) - config["filtering"]["noise_lower"],
         double_slop = ( config["filtering"]["tss_slop"] * 2 ),
@@ -72,12 +36,12 @@ rule tss_coverage:
         noise_lower = config["filtering"]["noise_lower"],
     resources:
         mem_mb=16000,
-        runtime = 20,
+        runtime = 30,
     threads: config["resources"].get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
     log:
-        "logs/rules/coverage_{sample}.log"
+        "logs/rules/tss_coverage_{sample}.log"
     shell:
         """
         echo "base,count" > {output.tss_hist};
@@ -90,21 +54,21 @@ rule tss_coverage:
 
 rule ataqv:
     input:
-        bam = os.path.join(result_path, "bam", "{sample}", "{sample}.filtered.bam"),
-        bai = os.path.join(result_path, "bam", "{sample}", "{sample}.filtered.bam.bai"),
-        peak_file = os.path.join(result_path, "results", "{sample}", "peaks", "{sample}_peaks.narrowPeak"),
-        tss_file = os.path.join(result_path, "genome", "tss.bed"),
+        bam = os.path.join(result_path, "important_processed", "bam", "{sample}.filtered.bam"),
+        bai = os.path.join(result_path, "important_processed", "bam", "{sample}.filtered.bam.bai"),
+        peak_file = os.path.join(result_path, "important_processed", "peaks", "{sample}_peaks.narrowPeak"),
+        tss_file = os.path.join(result_path, "refs", "tss.bed"),
         excl_regs_file = config["refs"]["blacklist"],
-        autosom_ref_file = os.path.join(result_path, "genome", "autosomes.txt")
+        autosom_ref_file = os.path.join(result_path, "refs", "autosomes.txt")
     output:
-        json = os.path.join(result_path, "results", "{sample}", "{sample}.ataqv.json")
+        json = os.path.join(result_path, "report", "ataqv", "{sample}.ataqv.json")
     params:
         organism = config["project"].get("genome", "hg38"),
         mito_name = config["refs"].get("mito_name", "chrM"),
         args = config.get("ataqv_args", "--ignore-read-groups"),
         prefix = "{sample}"
     log:
-        "logs/ataqv/{sample}.log"
+        "logs/rules/ataqv/{sample}.log"
     conda:
         "../envs/ataqv.yaml"
     threads: config.get("ataqv_threads", 2)
@@ -126,13 +90,13 @@ rule ataqv:
 
 rule mkarv:
     input:
-        jsons = expand(os.path.join(result_path, "results", "{sample}", "{sample}.ataqv.json"), sample=samples.keys())
+        jsons = expand(os.path.join(result_path, "report", "ataqv", "{sample}.ataqv.json"), sample=samples.keys())
     output:
-        html = directory(os.path.join(result_path, "ataqv_report"))
+        html = directory(os.path.join(result_path, "report", "ataqv_report"))
     params:
         args = config.get("mkarv_args", "")
     log:
-        "logs/mkarv/mkarv.log"
+        "logs/rules/mkarv/mkarv.log"
     conda:
         "../envs/ataqv.yaml"
     threads: config.get("mkarv_threads", 2)

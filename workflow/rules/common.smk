@@ -59,11 +59,11 @@ def get_all_fastqs_for_sample(sample_name):
 
 def get_quantifications(wildcards):
     if wildcards.kind=="support":
-        paths = expand(os.path.join(result_path, "results", "{sample}", "peaks", "{sample}_quantification_support_counts.csv"), sample=samples.keys())
+        paths = expand(os.path.join(result_path, "downstream_res", "quantification", "{sample}_quantification_support_counts.csv"), sample=samples.keys())
     elif wildcards.kind=="consensus":
-        paths = expand(os.path.join(result_path, "results", "{sample}", "mapped", "{sample}_quantification_consensus_counts.csv"), sample=samples.keys())
+        paths = expand(os.path.join(result_path, "downstream_res", "quantification", "{sample}_quantification_consensus_counts.csv"), sample=samples.keys())
     elif wildcards.kind=="promoter":
-        paths = expand(os.path.join(result_path, "results", "{sample}", "mapped", "{sample}_quantification_promoter_counts.csv"), sample=samples.keys())
+        paths = expand(os.path.join(result_path, "downstream_res", "quantification", "{sample}_quantification_promoter_counts.csv"), sample=samples.keys())
     elif wildcards.kind=="TSS":
-        paths = expand(os.path.join(result_path, "results", "{sample}", "mapped", "{sample}_quantification_distance_to_TSS_counts.csv"), sample=samples.keys())
+        paths = expand(os.path.join(result_path, "downstream_res", "quantification", "{sample}_quantification_TSS_counts.csv"), sample=samples.keys())
     return paths

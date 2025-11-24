@@ -3,7 +3,7 @@ rule get_genome_fai:
     input:
         genome_fasta = config["refs"]["fasta"]
     output:
-        fai = os.path.join(result_path, "genome", "genome.fai")
+        fai = os.path.join(result_path, "refs", "genome.fai")
     log:
         "logs/rules/get_genome_fai.log"
     conda:
@@ -20,9 +20,9 @@ rule get_genome_fai:
 
 rule get_autosomes:
     input:
-        fai = os.path.join(result_path, "genome", "genome.fai")
+        fai = os.path.join(result_path, "refs", "genome.fai")
     output:
-        txt = os.path.join(result_path, "genome", "autosomes.txt"),
+        txt = os.path.join(result_path, "refs", "autosomes.txt"),
     log:
         "logs/get_autosomes/get_autosomes.log"
     conda:
@@ -40,7 +40,7 @@ rule gtf2tss:
     input:
         gtf = config.get("gtf", config["refs"].get("gencode_gtf", ""))
     output:
-        tss = os.path.join(result_path, "genome", "tss.bed"),
+        tss = os.path.join(result_path, "refs", "tss.bed"),
     log:
         "logs/rules/gtf2tss/gtf2tss.log"
     conda:

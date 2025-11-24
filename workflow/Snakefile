@@ -130,25 +130,25 @@ rule all:
         # PROCESSING
         multiqc_report = os.path.join(result_path,"report","multiqc_report.html"),
         # QUANTIFICATION
-        sample_annotation = os.path.join(result_path, "counts", "sample_annotation.csv"),
+        sample_annotation = os.path.join(result_path, "downstream_res", "annotation", "sample_annotation.csv"),
         sample_annotation_plot = os.path.join(result_path, "report", "sample_annotation.png"),
-        support_counts = os.path.join(result_path,"counts","support_counts.csv"),
-        consensus_counts = os.path.join(result_path,"counts","consensus_counts.csv"),
-        promoter_counts = os.path.join(result_path,"counts","promoter_counts.csv"),
-        tss_counts = os.path.join(result_path,"counts","TSS_counts.csv"),
-        HOMER_knownMotifs = os.path.join(result_path,"counts","HOMER_knownMotifs.csv"),
+        support_counts = os.path.join(result_path,"downstream_res","quantification","support_counts.csv"),
+        consensus_counts = os.path.join(result_path,"downstream_res","quantification","consensus_counts.csv"),
+        promoter_counts = os.path.join(result_path,"downstream_res","quantification","promoter_counts.csv"),
+        tss_counts = os.path.join(result_path,"downstream_res","quantification","TSS_counts.csv"),
+        HOMER_knownMotifs = os.path.join(result_path,"downstream_res","quantification","HOMER_knownMotifs.csv"),
         # ANNOTATION
-        consensus_annotation = os.path.join(result_path,'counts',"consensus_annotation.csv"),
+        consensus_annotation = os.path.join(result_path,'downstream_res','annotation',"consensus_annotation.csv"),
         # QC - ATAQV
-        ataqv_report = os.path.join(result_path, "ataqv_report"),
+        ataqv_report = os.path.join(result_path, "report", "ataqv_report"),
         # ALIGNMENT STATS REPORT
         align_stats_report = os.path.join(result_path, "report", "align_stats_report.tsv"),
         # EXPORT environments and configurations
         envs = expand(os.path.join(result_path,'envs','{env}.yaml'),env=envs),
         configs = os.path.join(result_path,'configs','{}_config.yaml'.format(config["project"]["name"])),
         annotations = os.path.join(result_path,'configs','{}_annot.csv'.format(config["project"]["name"])),
-        merged_peaks = os.path.join(result_path,"summary","peaks","merged_peaks.bed"),
-        tracks_out = expand(os.path.join(result_path, "tracks", "{sample}.bw"), sample=list(samples.keys())),
+        merged_peaks = os.path.join(result_path,"downstream_res","merged_peaks","merged_peaks.bed"),
+        tracks_out = expand(os.path.join(result_path, "important_processed", "tracks", "{sample}.bw"), sample=list(samples.keys())),
     resources:
         mem_mb=config["resources"]["mem_mb"],
     threads: config["resources"]["threads"]

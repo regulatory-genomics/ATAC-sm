@@ -5,7 +5,7 @@ _ALIGNER_LOG_SUFFIX = "txt" if aligner == "bowtie2" else "bwa.log"
 
 rule collect_align_stats:
     input:
-        expand(os.path.join(result_path, 'results', '{sample}', '{sample}.align.stats.tsv'), 
+        expand(os.path.join(result_path, "report", "align_stats", '{sample}.align.stats.tsv'), 
                sample=samples.keys())
     output:
         report_tsv = os.path.join(result_path, 'report', 'align_stats_report.tsv')
@@ -33,10 +33,10 @@ rule collect_align_stats:
 
 rule symlink_sample_stats:
     input:
-        align_stats = os.path.join(result_path, 'results', "{sample}", '{sample}.align.stats.tsv'),
-        mapped_log = lambda w: os.path.join(result_path, 'bam', w.sample, f'{w.sample}.{_ALIGNER_LOG_SUFFIX}'),
-        samblaster_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samblaster.log'),
-        flagstat_log = os.path.join(result_path, 'bam', "{sample}", '{sample}.samtools_flagstat.log'),
+        align_stats = os.path.join(result_path, "report", "align_stats", "{sample}.align.stats.tsv"),
+        mapped_log = lambda w: os.path.join(result_path, 'logs',"align", w.sample, f'{w.sample}.{_ALIGNER_LOG_SUFFIX}'),
+        samblaster_log = os.path.join(result_path, 'logs', 'align', '{sample}.samblaster.log'),
+        flagstat_log = os.path.join(result_path, 'logs', 'align', '{sample}.samtools_flagstat.log'),
     wildcard_constraints:
         sample="|".join(samples.keys())
     output:
@@ -60,10 +60,10 @@ rule symlink_sample_stats:
 
 rule symlink_stats:
     input:
-        stats_tsv = os.path.join(result_path, 'results', "{sample}", '{sample}.stats.tsv'),
-        tss_csv = os.path.join(result_path, 'results', "{sample}", '{sample}.tss_histogram.csv'),
-        macs2_log = os.path.join(result_path, 'results', "{sample}", 'peaks', '{sample}.macs2.log'),
-        peaks_xls = os.path.join(result_path, 'results', "{sample}", 'peaks', '{sample}_peaks.xls'),
+        stats_tsv = os.path.join(result_path, 'report', "peaks_stats", '{sample}.stats.tsv'),
+        tss_csv = os.path.join(result_path, 'report', "peaks_stats", '{sample}.tss_histogram.csv'),
+        macs2_log = os.path.join(result_path, 'report', "peaks_stats", '{sample}.macs2.log'),
+        peaks_xls = os.path.join(result_path, 'report', "peaks_stats", '{sample}_peaks.xls'),
     output:
         stats_tsv = os.path.join(result_path, 'report', '{sample}.stats.tsv'),
         tss_csv = os.path.join(result_path, 'report', '{sample}_TSS.csv'),
@@ -85,8 +85,8 @@ rule symlink_stats:
 
 rule multiqc:
     input:
-        expand(os.path.join(result_path,"bam","{sample}", "{sample}.filtered.bam"), sample=samples.keys()),
-        expand(os.path.join(result_path,"results","{sample}","peaks","{sample}_peaks.narrowPeak"), sample=samples.keys()),
+        expand(os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam"), sample=samples.keys()),
+        expand(os.path.join(result_path,"important_processed","peaks","{sample}_peaks.narrowPeak"), sample=samples.keys()),
         expand(os.path.join(result_path, 'report', '{sample}_peaks.xls'), sample=samples.keys()), # representing symlinked stats
         # collect fastp report from all runs (sample_run format)
         expand(os.path.join(result_path, 'report', '{sample_run}_fastp.html'), sample_run=annot.index.tolist()),
@@ -127,7 +127,7 @@ rule multiqc:
 rule plot_sample_annotation:
     input:
         sample_annotation = annotation_sheet_path,
-        sample_annotation_w_QC = os.path.join(result_path, "counts", "sample_annotation.csv"),
+        sample_annotation_w_QC = os.path.join(result_path, "downstream_res", "annotation", "sample_annotation.csv"),
     output:
         sample_annotation_plot = os.path.join(result_path,"report","sample_annotation.png"),
         sample_annotation_html = report(os.path.join(result_path,"report","sample_annotation.html"),
@@ -146,3 +146,20 @@ rule plot_sample_annotation:
         "../envs/ggplot.yaml"
     script:
         "../scripts/plot_sample_annotation.R"
+
+rule aggregate_stats:
+    input:
+        peak_stats = os.path.join(result_path, 'report', "peaks_stats", '{sample}.peak.stats.tsv'),
+    output:
+        os.path.join(result_path, 'report', "peaks_stats", '{sample}.stats.tsv'),
+    resources:
+        mem_mb=config["resources"].get("mem_mb", 1000),
+        runtime = 1,
+    threads: config["resources"].get("threads", 2)
+    log:
+        "logs/rules/aggregate_stats_{sample}.log"
+    shell:
+        """
+        cat {input.peak_stats} > {output}
+        """
+

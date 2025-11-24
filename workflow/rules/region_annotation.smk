@@ -3,14 +3,14 @@
 # prepare configs for uropa
 rule uropa_prepare:
     input:
-        consensus_regions = os.path.join(result_path,"counts","consensus_regions.bed"),
+        consensus_regions = os.path.join(result_path,"downstream_res","annotation","consensus_regions.bed"),
         gencode_template = workflow.source_path(config["annotation"]["templates"]["gencode"]),
         regulatory_template = workflow.source_path(config["annotation"]["templates"]["regulatory"]),
         gencode_gtf = config["refs"]["gencode_gtf"],
         regulatory_build_gtf = config["refs"]["regulatory_gtf"],
     output:
-        gencode_config = os.path.join(result_path,"tmp","consensus_regions_gencode.json"),
-        reg_config = os.path.join(result_path,"tmp","consensus_regions_reg.json"),
+        gencode_config = os.path.join(result_path,"middle_files","annotation","consensus_regions_gencode.json"),
+        reg_config = os.path.join(result_path,"middle_files","annotation","consensus_regions_reg.json"),
     params:
         tss_size = config["annotation"]["tss_size"],
         proximal_size_up = config["annotation"]["promoter"]["up"],
@@ -20,7 +20,7 @@ rule uropa_prepare:
         mem_mb=config["resources"].get("mem_mb", 16000),
     threads: config["resources"].get("threads", 2)
     log:
-        "logs/rules/uropa_prepare.log"
+        "logs/rules/annotation/uropa_prepare.log"
     run:
         ### generate gencode config
         with open(input.gencode_template) as f:
@@ -53,19 +53,19 @@ rule uropa_prepare:
 # run uropa on consensus regions for gencode
 rule uropa_gencode:
     input:
-        consensus_regions = os.path.join(result_path,"counts","consensus_regions.bed"),
-        gencode_config = os.path.join(result_path,"tmp","consensus_regions_gencode.json"),
+        consensus_regions = os.path.join(result_path,"downstream_res","annotation","consensus_regions.bed"),
+        gencode_config = os.path.join(result_path,"middle_files","annotation","consensus_regions_gencode.json"),
     output:
-        gencode_results = os.path.join(result_path,"tmp","gencode_finalhits.txt"),
+        gencode_results = os.path.join(result_path,"middle_files","annotation","gencode_finalhits.txt"),
     params:
-        results_dir = os.path.join(result_path,"tmp"),
+        results_dir = os.path.join(result_path,"middle_files","annotation"),
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
     threads: 4*config["resources"].get("threads", 2)
     conda:
         "../envs/uropa.yaml",
     log:
-        "logs/rules/uropa_run_gencode.log"
+        "logs/rules/annotation/uropa_run_gencode.log"
     shell:
         """
         uropa -p {params.results_dir}/gencode -i {input.gencode_config} -t {threads} -l {params.results_dir}/uropa.gencode.log
@@ -74,12 +74,12 @@ rule uropa_gencode:
 # run uropa on consensus regions for regulatory build
 rule uropa_reg:
     input:
-        consensus_regions = os.path.join(result_path,"counts","consensus_regions.bed"),
-        reg_config = os.path.join(result_path,"tmp","consensus_regions_reg.json"),
+        consensus_regions = os.path.join(result_path,"downstream_res","annotation","consensus_regions.bed"),
+        reg_config = os.path.join(result_path,"middle_files","annotation","consensus_regions_reg.json"),
     output:
-        reg_results = os.path.join(result_path,"tmp","reg_finalhits.txt"),
+        reg_results = os.path.join(result_path,"middle_files","annotation","reg_finalhits.txt"),
     params:
-        results_dir = os.path.join(result_path,"tmp"),
+        results_dir = os.path.join(result_path,"middle_files","annotation"),
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
     threads: 4*config["resources"].get("threads", 2)
@@ -95,11 +95,11 @@ rule uropa_reg:
 # peak annotation using homer
 rule homer_region_annotation:
     input:
-        consensus_regions = os.path.join(result_path,"counts","consensus_regions.bed"),
+        consensus_regions = os.path.join(result_path,"downstream_res","annotation","consensus_regions.bed"),
         homer_script = os.path.join(HOMER_path,"configureHomer.pl"),
     output:
-        homer_annotations = os.path.join(result_path,"tmp","homer_annotations.tsv"),
-        homer_annotations_log = os.path.join(result_path,"tmp","homer_annotations.tsv.log"),
+        homer_annotations = os.path.join(result_path,"middle_files","annotation","homer_annotations.tsv"),
+        homer_annotations_log = os.path.join(result_path,"middle_files","annotation","homer_annotations.tsv.log"),
     params:
         homer_bin = os.path.join(HOMER_path,"bin"),
         genome = config["project"]["genome"],
@@ -109,7 +109,7 @@ rule homer_region_annotation:
     conda:
         "../envs/macs2_homer.yaml",
     log:
-        "logs/rules/homer_region_annotation.log"
+        "logs/rules/annotation/homer_region_annotation.log"
     shell:
         """
         export PATH="{params.homer_bin}:$PATH";
@@ -134,17 +134,17 @@ rule homer_region_annotation:
 # get gc content and region length
 rule bedtools_annotation:
     input:
-        consensus_regions = os.path.join(result_path,"counts","consensus_regions.bed"),
+        consensus_regions = os.path.join(result_path,"downstream_res","annotation","consensus_regions.bed"),
         genome_fasta = config["refs"]["fasta"],
     output:
-        bedtools_annotation = os.path.join(result_path, "tmp", "bedtools_annotation.bed"),
+        bedtools_annotation = os.path.join(result_path, "middle_files", "annotation", "bedtools_annotation.bed"),
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
     threads: config["resources"].get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
     log:
-        "logs/rules/bedtools_annotation.log"
+        "logs/rules/annotation/bedtools_annotation.log"
     shell:
         """
         bedtools nuc -fi {input.genome_fasta} -bed {input.consensus_regions} > {output.bedtools_annotation}
@@ -153,17 +153,17 @@ rule bedtools_annotation:
 # aggregate uropa and homer annotation results
 rule region_annotation_aggregate:
     input:
-        gencode_results = os.path.join(result_path,"tmp","gencode_finalhits.txt"),
-        reg_results = os.path.join(result_path,"tmp","reg_finalhits.txt"),
-        homer_annotations = os.path.join(result_path,"tmp","homer_annotations.tsv"),
-        bedtools_annotation = os.path.join(result_path, "tmp", "bedtools_annotation.bed"),
+        gencode_results = os.path.join(result_path,"middle_files","annotation","gencode_finalhits.txt"),
+        reg_results = os.path.join(result_path,"middle_files","annotation","reg_finalhits.txt"),
+        homer_annotations = os.path.join(result_path,"middle_files","annotation","homer_annotations.tsv"),
+        bedtools_annotation = os.path.join(result_path, "middle_files", "annotation", "bedtools_annotation.bed"),
     output:
-        region_annotation = os.path.join(result_path,'counts',"consensus_annotation.csv"),
+        region_annotation = os.path.join(result_path,'downstream_res','annotation',"consensus_annotation.csv"),
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
     threads: config["resources"].get("threads", 2)
     log:
-        "logs/rules/region_annotation_aggregate.log"
+        "logs/rules/annotation/region_annotation_aggregate.log"
     run:
         import os
         import shutil
@@ -288,6 +288,6 @@ rule region_annotation_aggregate:
         base_character.to_csv(output.region_annotation, index_label='peak_id')
         
         # remove tmp folder
-        tmp_dir = os.path.dirname(input.gencode_results)
-        if os.path.exists(tmp_dir):
-            shutil.rmtree(tmp_dir)
+        middle_files_dir = os.path.dirname(input.gencode_results)
+        if os.path.exists(middle_files_dir):
+            shutil.rmtree(middle_files_dir)
