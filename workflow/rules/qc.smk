@@ -111,4 +111,3 @@ rule mkarv:
             {input.jsons} 2> {log}
 
         """
-

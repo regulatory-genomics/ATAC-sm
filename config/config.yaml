@@ -57,6 +57,9 @@ filtering:
 peaks:
   macs2_keep_dup: "auto"
   slop_extension: 250     # Extension for consensus regions
+  macs2_shift: -75        # center 150bp window on Tn5 cut site
+  macs2_extsize: 150      # 2 * |macs2_shift|
+  macs2_format: "BED"     # enforce BED input for ATAC
 
 # 5. Annotation (UROPA)
 annotation:

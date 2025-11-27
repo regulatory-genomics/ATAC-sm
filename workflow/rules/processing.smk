@@ -456,11 +456,35 @@ rule samtools_process:
 # Note: merge_bam rule removed - alignment now directly outputs per-sample BAM files
 # combining all runs in a single alignment step
         
-# Peak calling with MACS2
-rule peak_calling:
+# Convert filtered BAM to BED to capture individual Tn5 insertion sites
+rule bam_to_bed:
     input:
         bam = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam"),
         bai = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam.bai"),
+    output:
+        bed = os.path.join(result_path,"middle_files","bed","{sample}.insertion_sites.bed"),
+    params:
+        bed_dir = os.path.join(result_path,"middle_files","bed"),
+    resources:
+        mem_mb = config["resources"].get("mem_mb", 16000),
+        runtime = 30,
+    threads: config["resources"].get("threads", 1)
+    conda:
+        "../envs/pybedtools.yaml",
+    log:
+        "logs/rules/bam_to_bed_{sample}.log"
+    wildcard_constraints:
+        sample="|".join(samples.keys())
+    shell:
+        """
+        mkdir -p {params.bed_dir}
+        bedtools bamtobed -i {input.bam} > {output.bed} 2> {log}
+        """
+
+# Peak calling with MACS2
+rule peak_calling:
+    input:
+        bed = os.path.join(result_path,"middle_files","bed","{sample}.insertion_sites.bed"),
     output:
         peak_calls = os.path.join(result_path,"important_processed","peaks","{sample}_peaks.narrowPeak"),
         macs2_xls = os.path.join(result_path,"important_processed","peaks","{sample}_peaks.xls"),
@@ -468,9 +492,11 @@ rule peak_calling:
         macs2_log = os.path.join(result_path, 'important_processed', 'peaks', '{sample}.macs2.log'),
     params:
         peaks_dir = os.path.join(result_path,"important_processed","peaks"),
-        formating = lambda w: '--format BAMPE' if samples["{}".format(w.sample)]["read_type"] == "paired" else '--format BAM',
         genome_size = config["refs"]["genome_size_bp"],
         keep_dup = config["peaks"]["macs2_keep_dup"],
+        macs2_shift = config["peaks"].get("macs2_shift", -75),
+        macs2_extsize = config["peaks"].get("macs2_extsize", 150),
+        macs2_format = config["peaks"].get("macs2_format", "BED"),
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
         runtime = 60,
@@ -485,8 +511,10 @@ rule peak_calling:
         """
         mkdir -p {params.peaks_dir}
         
-        macs2 callpeak -t {input.bam} {params.formating} \
-            --nomodel --keep-dup {params.keep_dup} --extsize 147 -g {params.genome_size} \
+        macs2 callpeak -t {input.bed} -f {params.macs2_format} \
+            --nomodel --keep-dup {params.keep_dup} \
+            --shift {params.macs2_shift} --extsize {params.macs2_extsize} \
+            -g {params.genome_size} \
             -n {wildcards.sample} \
             --outdir {params.peaks_dir} > "{output.macs2_log}" 2>&1;
         
