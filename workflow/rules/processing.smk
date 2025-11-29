@@ -579,8 +579,8 @@ rule peak_annotation:
             echo "frip\t0" >> {output.stats}
             echo "regulatory_fraction\t0" >> {output.stats}
         else
-            # Run HOMER annotation
-            {params.homer_bin}/annotatePeaks.pl {input.peak_calls} {params.genome} > {output.peak_annot} 2> {output.peak_annot_log};
+            # Run HOMER annotation (allow it to fail gracefully)
+            {params.homer_bin}/annotatePeaks.pl {input.peak_calls} {params.genome} > {output.peak_annot} 2> {output.peak_annot_log} || echo "HOMER annotation completed with warnings or errors" >> {output.peak_annot_log};
             
             # Run HOMER motif finding (only if summits file exists and is not empty)
             if [ -f {input.summits_bed} ] && [ -s {input.summits_bed} ]; then
@@ -593,13 +593,13 @@ rule peak_annotation:
             PEAK_COUNT=$(cat {input.peak_calls} | wc -l)
             echo "peaks\t$PEAK_COUNT" > {output.stats}
             
-            TOTAL_READS=$(samtools idxstats {input.bam} | awk '{{sum += $3}}END{{print sum}}');
+            TOTAL_READS=$(samtools idxstats {input.bam} 2>/dev/null | awk '{{sum += $3}}END{{print sum+0}}' || echo "0");
             
-            if [ "$TOTAL_READS" -gt 0 ]; then
-                FRIP=$(samtools view -c -L {input.peak_calls} {input.bam} | awk -v total=$TOTAL_READS '{{print $1/total}}')
+            if [ "$TOTAL_READS" -gt 0 ] 2>/dev/null; then
+                FRIP=$(samtools view -c -L {input.peak_calls} {input.bam} 2>/dev/null | awk -v total=$TOTAL_READS '{{if(NF>0) print $1/total; else print 0}}' || echo "0")
                 echo "frip\t$FRIP" >> {output.stats}
                 
-                REGULATORY_FRAC=$(samtools view -c -L {input.regulatory_regions} {input.bam} | awk -v total=$TOTAL_READS '{{print $1/total}}')
+                REGULATORY_FRAC=$(samtools view -c -L {input.regulatory_regions} {input.bam} 2>/dev/null | awk -v total=$TOTAL_READS '{{if(NF>0) print $1/total; else print 0}}' || echo "0")
                 echo "regulatory_fraction\t$REGULATORY_FRAC" >> {output.stats}
             else
                 echo "frip\t0" >> {output.stats}

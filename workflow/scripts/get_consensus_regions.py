@@ -41,8 +41,10 @@ if output_bed is None or len(output_bed) == 0:
     with open(consensus_regions_path, 'w') as f:
         pass  # Create empty file
 else:
+    # Cut to only first 3 columns (chrom, start, end) before saving and reading
+    output_bed = output_bed.cut([0, 1, 2]).sort(faidx=chrom_file)
     output_bed.saveas(consensus_regions_path)
-    peaks = bedtools.BedTool(consensus_regions_path).sort(faidx=chrom_file).to_dataframe(names=['CHR','START','END'],dtype={'START':int,'END':int})
+    peaks = bedtools.BedTool(consensus_regions_path).to_dataframe(names=['CHR','START','END'],dtype={'START':int,'END':int})
     
     # Create ID column with proper formatting
     peaks['ID'] = peaks.index.to_series().apply(lambda x: "CONS{:011d}".format(x))
