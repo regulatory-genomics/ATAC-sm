@@ -34,8 +34,8 @@ rule collect_align_stats:
 rule symlink_sample_stats:
     input:
         align_stats = os.path.join(result_path, "report", "align_stats", "{sample}.align.stats.tsv"),
-        mapped_log = lambda w: os.path.join(result_path, 'logs',"align", w.sample, f'{w.sample}.{_ALIGNER_LOG_SUFFIX}'),
-        samblaster_log = os.path.join(result_path, 'logs', 'align', '{sample}.samblaster.log'),
+        mapped_log = lambda w: os.path.join(result_path, 'logs',"align", w.sample, f'{w.sample}.{_ALIGNER_LOG_SUFFIX}') if aligner == "bwa-mem2" else os.path.join(result_path, 'logs',"align", f'{w.sample}.{_ALIGNER_LOG_SUFFIX}'),
+        samblaster_log = lambda w: os.path.join(result_path, 'logs', 'align', w.sample, f'{w.sample}.samblaster.log') if aligner == "bwa-mem2" else os.path.join(result_path, 'logs', 'align', f'{w.sample}.samblaster.log'),
         flagstat_log = os.path.join(result_path, 'logs', 'align', '{sample}.samtools_flagstat.log'),
     wildcard_constraints:
         sample="|".join(samples.keys())
@@ -61,9 +61,9 @@ rule symlink_sample_stats:
 rule symlink_stats:
     input:
         stats_tsv = os.path.join(result_path, 'report', "peaks_stats", '{sample}.stats.tsv'),
-        tss_csv = os.path.join(result_path, 'report', "peaks_stats", '{sample}.tss_histogram.csv'),
-        macs2_log = os.path.join(result_path, 'report', "peaks_stats", '{sample}.macs2.log'),
-        peaks_xls = os.path.join(result_path, 'report', "peaks_stats", '{sample}_peaks.xls'),
+        tss_csv = os.path.join(result_path, 'report', "tss_coverage", '{sample}.tss_histogram.csv'),
+        macs2_log = os.path.join(result_path, 'important_processed', 'peaks', '{sample}.macs2.log'),
+        peaks_xls = os.path.join(result_path, 'important_processed', 'peaks', '{sample}_peaks.xls'),
     wildcard_constraints:
         sample="|".join(samples.keys())
     output:
@@ -91,8 +91,8 @@ rule multiqc:
         expand(os.path.join(result_path,"important_processed","peaks","{sample}_peaks.narrowPeak"), sample=samples.keys()),
         expand(os.path.join(result_path, 'report', '{sample}_peaks.xls'), sample=samples.keys()), # representing symlinked stats
         # collect fastp report from all runs (sample_run format)
-        expand(os.path.join(result_path, 'report', '{sample_run}_fastp.html'), sample_run=annot.index.tolist()),
-        expand(os.path.join(result_path, 'report', '{sample_run}_fastp.json'), sample_run=annot.index.tolist()),
+        expand(os.path.join(result_path, 'report', 'fastp', '{sample_run}_fastp.html'), sample_run=annot.index.tolist()),
+        expand(os.path.join(result_path, 'report', 'fastp', '{sample_run}_fastp.json'), sample_run=annot.index.tolist()),
         # Collect per-sample stats and logs for MultiQC
         expand(os.path.join(result_path, 'report', '{sample}.align.stats.tsv'), sample=samples.keys()),
         expand(os.path.join(result_path, 'report', '{sample}.' + _ALIGNER_LOG_SUFFIX), sample=samples.keys()),
