@@ -497,6 +497,7 @@ rule peak_calling:
         macs2_shift = config["peaks"].get("macs2_shift", -75),
         macs2_extsize = config["peaks"].get("macs2_extsize", 150),
         macs2_format = config["peaks"].get("macs2_format", "BED"),
+        pval = config["peaks"].get("macs2_pval", 1e-3),
     resources:
         mem_mb=config["resources"].get("mem_mb", 16000),
         runtime = 60,
@@ -516,6 +517,7 @@ rule peak_calling:
             --shift {params.macs2_shift} --extsize {params.macs2_extsize} \
             -g {params.genome_size} \
             -n {wildcards.sample} \
+            -p {params.pval} \
             --outdir {params.peaks_dir} > "{output.macs2_log}" 2>&1;
         
         # Handle empty peak files - create empty files if MACS2 didn't produce peaks
@@ -615,7 +617,7 @@ rule merge_peaks:
     input:
         peak_calls = expand(
             os.path.join(result_path, "important_processed", "peaks", "{sample}_peaks.narrowPeak"),
-            sample=list(samples.keys()),
+            sample=get_samples_passing_qc(),
         )
     output:
         os.path.join(result_path, "downstream_res", "merged_peaks", "merged_peaks.bed"),

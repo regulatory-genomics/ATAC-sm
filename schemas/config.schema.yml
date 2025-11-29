@@ -86,7 +86,7 @@ properties:
         oneOf:
           - type: integer
           - type: string
-            enum: ["auto"]
+            enum: ["auto","all"]
 
 # 7. ANNOTATION
   annotation:

@@ -4,6 +4,27 @@ def get_runs_for_sample(sample_name):
     sample_runs = annot[annot['sample_name'] == sample_name].index.tolist()
     return sample_runs if len(sample_runs) > 0 else []
 
+def get_samples_passing_qc():
+    """Get sample names that have at least one run passing QC (passqc=1).
+    If passqc column doesn't exist, returns all samples (default: all pass QC)."""
+    if 'passqc' not in annot.columns:
+        # Default: all samples pass QC if column doesn't exist
+        return list(samples.keys())
+    
+    # Get samples where at least one run has passqc == 1
+    # Handle both integer and string representations
+    passing_samples = set()
+    for sample_name in samples.keys():
+        sample_runs = get_runs_for_sample(sample_name)
+        for sample_run in sample_runs:
+            passqc_value = annot.loc[sample_run, 'passqc']
+            # Handle int, string, or boolean values
+            if passqc_value == 1 or str(passqc_value).strip() == '1':
+                passing_samples.add(sample_name)
+                break  # At least one run passes, include the sample
+    
+    return list(passing_samples) if passing_samples else []
+
 def get_units_fastqs(wildcards):
     """Get fastq files for a sample_run"""
     u = annot.loc[wildcards.sample_run]

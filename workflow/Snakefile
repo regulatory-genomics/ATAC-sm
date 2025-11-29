@@ -73,6 +73,11 @@ if list_cols:
     for col in list_cols:
         annot = annot.explode(col, ignore_index=True)
 
+# Remove duplicate (sample_name, run) pairs if they exist (keep first occurrence)
+# This handles cases where PEP or the CSV file might have duplicates
+if 'sample_name' in annot.columns and 'run' in annot.columns:
+    annot = annot.drop_duplicates(subset=['sample_name', 'run'], keep='first').reset_index(drop=True)
+
 # Ensure required columns exist
 required_columns = {"sample_name", "run"}
 missing_required = required_columns.difference(annot.columns)
@@ -85,6 +90,10 @@ if 'read_type' not in annot.columns:
 
 # Ensure run column is integer before validation
 annot['run'] = pd.to_numeric(annot['run'], errors='raise').astype(int)
+
+# Ensure passqc column is integer if it exists (before validation)
+if 'passqc' in annot.columns:
+    annot['passqc'] = pd.to_numeric(annot['passqc'], errors='coerce').fillna(0).astype(int)
 
 # Create a unique identifier for each run: sample_name_run
 annot['sample_name'] = annot['sample_name'].astype(str)

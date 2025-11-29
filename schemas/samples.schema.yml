@@ -40,6 +40,12 @@ properties:
     enum:
       - paired
       - single
+  passqc:
+    type: integer
+    description: "whether passqc. 1 for pass, 0 for not"
+    enum:
+      - 0
+      - 1
 
 required:
   - sample_name
