@@ -29,10 +29,10 @@ alignment:
   
   # Pre-alignment (Optional: e.g. filter chrM first)
   prealign:
-    enabled: false
+    enabled: true
     indices:
       - name: chrM
-        path: /data2/litian/database/bwa/hg38_rcrds/rcrds
+        path: "{database_dir}/hg38_rcrds/rcrds"
   
   # Tool Specifics
   bwa:

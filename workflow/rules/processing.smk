@@ -15,7 +15,7 @@ def _trimmed_fastq_paths(sample_run):
     )
 
 def _prealigned_fastq_paths(sample_run):
-    base_dir = os.path.join(result_path, "results", sample_run, "prealign")
+    base_dir = os.path.join(result_path, "middle_files", "prealigned")
     return (
         os.path.join(base_dir, f"{sample_run}_prealigned_1.fq.gz"),
         os.path.join(base_dir, f"{sample_run}_prealigned_2.fq.gz"),
@@ -53,8 +53,8 @@ def _get_all_prealigned_fastqs_for_sample(sample_name):
 if has_prealignments:
     for entry in prealignments:
         if isinstance(entry, dict):
-            if "index" not in entry:
-                raise ValueError("Each prealignment must define an 'index' key.")
+            if "path" not in entry:
+                raise ValueError("Each prealignment must define an 'path' key.")
         elif not isinstance(entry, str):
             raise ValueError("Prealignment entries must be dictionaries or strings of the form 'name=index'.")
 
@@ -65,9 +65,9 @@ if has_prealignments:
         wildcard_constraints:
             sample_run="|".join(annot.index.tolist())
         output:
-            fq1 = temp(os.path.join(result_path, "results", "{sample_run}", "prealign", "{sample_run}_prealigned_1.fq.gz")),
-            fq2 = temp(os.path.join(result_path, "results", "{sample_run}", "prealign", "{sample_run}_prealigned_2.fq.gz")),
-            stats = os.path.join(result_path, "results", "{sample_run}", "prealign", "{sample_run}.prealign.stats.tsv"),
+            fq1 = temp(os.path.join(result_path, "middle_files", "prealigned", "{sample_run}_prealigned_1.fq.gz")),
+            fq2 = temp(os.path.join(result_path, "middle_files", "prealigned", "{sample_run}_prealigned_2.fq.gz")),
+            stats = os.path.join(result_path, "report", "prealigned", "{sample_run}.prealign.stats.tsv"),
         params:
             prealignments = prealignments,
             aligner = config["alignment"].get("tool", "bowtie2"),
@@ -135,9 +135,9 @@ if has_prealignments:
 
             def _parse_entry(entry):
                 if isinstance(entry, dict):
-                    idx = entry.get("index")
+                    idx = entry.get("path")
                     if idx is None:
-                        raise ValueError("Prealignment dictionary entries require an 'index'.")
+                        raise ValueError("Prealignment dictionary entries require an 'path' key.")
                     name = entry.get("name") or Path(idx).stem
                     return name, idx
                 entry = str(entry)

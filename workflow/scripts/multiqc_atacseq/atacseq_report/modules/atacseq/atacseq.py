@@ -105,6 +105,56 @@ class MultiqcModule(BaseMultiqcModule):
                         break
         log.info('Found Samblaster log files for {} samples'.format(len(samblaster_files)))
         
+        # Parse prealign stats files for percent_filtered
+        # Prealign stats are per sample_run, need to map to sample_name
+        prealign_stats_files = list(self.find_log_files(sp_key='atacseq/prealign_stats'))
+        if prealign_stats_files:
+            # Load annotation to map sample_run to sample_name
+            try:
+                import csv
+                sample_annotation_path = config.annotation
+                sample_run_to_sample_name = {}
+                with open(sample_annotation_path, 'r') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        sample_name = row.get('sample_name', '').strip()
+                        run = row.get('run', '').strip()
+                        if sample_name and run:
+                            sample_run = f"{sample_name}_{run}"
+                            sample_run_to_sample_name[sample_run] = sample_name
+            except Exception as e:
+                log.warning('Could not load annotation file for prealign stats mapping: {}'.format(str(e)))
+                sample_run_to_sample_name = {}
+            
+            # Parse each prealign stats file
+            for f in prealign_stats_files:
+                # Extract sample_run from filename (e.g., "test_1.prealign.stats.tsv" -> "test_1")
+                sample_run = f['s_name'].replace('.prealign.stats', '')
+                # Map to sample_name
+                sample_name = sample_run_to_sample_name.get(sample_run, sample_run.split('_')[0] if '_' in sample_run else sample_run)
+                
+                # Parse the stats file to extract percent_filtered from "total" row
+                prealign_data = self.parse_prealign_stats(f['f'])
+                if prealign_data and 'percent_filtered' in prealign_data:
+                    if sample_name not in self.atacseq_data:
+                        self.atacseq_data[sample_name] = {}
+                    # Store percent_filtered (will aggregate if multiple runs per sample)
+                    if 'percent_filtered' not in self.atacseq_data[sample_name]:
+                        self.atacseq_data[sample_name]['percent_filtered'] = []
+                    self.atacseq_data[sample_name]['percent_filtered'].append(prealign_data['percent_filtered'])
+            
+            # Aggregate percent_filtered per sample (average if multiple runs)
+            for sample_name in self.atacseq_data:
+                if 'percent_filtered' in self.atacseq_data[sample_name] and isinstance(self.atacseq_data[sample_name]['percent_filtered'], list):
+                    values = self.atacseq_data[sample_name]['percent_filtered']
+                    if values:
+                        avg_percent = sum(values) / len(values)
+                        self.atacseq_data[sample_name]['percent_filtered'] = avg_percent
+                    else:
+                        del self.atacseq_data[sample_name]['percent_filtered']
+            
+            log.info('Found prealign stats file for {} sample_runs'.format(len(prealign_stats_files)))
+        
         # Remove ignored samples if there is any
         self.atacseq_tss_data = self.ignore_samples(self.atacseq_tss_data)
         # Remove ignored samples if there is any
@@ -173,6 +223,33 @@ class MultiqcModule(BaseMultiqcModule):
                 metric = s[0].strip()
                 value = s[1].strip()
                 data[metric] = value
+        return data
+
+    def parse_prealign_stats(self, f):
+        """
+        Parse prealign stats file to extract percent_filtered from the "total" row.
+        Format: prealignment\treads_before\treads_after\treads_filtered\tpercent_filtered
+        """
+        data = {}
+        lines = f.splitlines()
+        if len(lines) < 2:
+            return data
+        
+        # Skip header line
+        for line in lines[1:]:
+            line = line.strip()
+            if not line:
+                continue
+            fields = line.split('\t')
+            if len(fields) >= 5:
+                prealignment = fields[0].strip()
+                if prealignment == 'total':
+                    try:
+                        percent_filtered = float(fields[4].strip())
+                        data['percent_filtered'] = percent_filtered
+                    except (ValueError, IndexError):
+                        pass
+                    break
         return data
 
     def add_atacseq_to_general_stats(self):
@@ -249,6 +326,13 @@ class MultiqcModule(BaseMultiqcModule):
                 except:
                     value = None
                 data[sample_name]['nrf'] = value
+            
+            if 'percent_filtered' in self.atacseq_data[sample_name]:
+                try:
+                    value = float(self.atacseq_data[sample_name]['percent_filtered'])
+                except:
+                    value = None
+                data[sample_name]['percent_filtered'] = value
         headers = OrderedDict()
         if hasattr(config, 'exploratory_columns'):
             for column in config.exploratory_columns:
@@ -380,6 +464,16 @@ class MultiqcModule(BaseMultiqcModule):
             'min': 0.0,
             'max': 1.0,
             'format': '{:.4f}'
+        })
+        
+        add_header_if_visible('percent_filtered', {
+            'description': 'Percentage of reads filtered during prealignment',
+            'title': 'Prealign\nFiltered %',
+            'scale': 'Reds-rev',
+            'min': 0.0,
+            'max': 100.0,
+            'suffix': '%',
+            'format': '{:.2f}'
         })
         
         self.general_stats_addcols(data, headers)
