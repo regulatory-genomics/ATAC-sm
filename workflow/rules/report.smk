@@ -2,6 +2,11 @@
 aligner = config["alignment"].get("tool", "bowtie2")
 _ALIGNER_LOG_SUFFIX = "txt" if aligner == "bowtie2" else "bwa.log"
 
+# Check if prealignments are enabled
+prealign_enabled = config["alignment"].get("prealign", {}).get("enabled", True)
+prealignments = config["alignment"].get("prealign", {}).get("indices", []) or []
+has_prealignments = prealign_enabled and len(prealignments) > 0
+
 
 rule collect_align_stats:
     input:
@@ -57,30 +62,6 @@ rule symlink_sample_stats:
         ln -sfn $(realpath --relative-to=$(dirname {output.samblaster_log}) {input.samblaster_log}) {output.samblaster_log}
         ln -sfn $(realpath --relative-to=$(dirname {output.flagstat_log}) {input.flagstat_log}) {output.flagstat_log}
         """
-
-# Symlink prealign stats files (per sample_run, will be aggregated per sample in MultiQC)
-prealign_enabled = config["alignment"].get("prealign", {}).get("enabled", True)
-prealignments = config["alignment"].get("prealign", {}).get("indices", []) or []
-has_prealignments = prealign_enabled and len(prealignments) > 0
-
-if has_prealignments:
-    rule symlink_prealign_stats:
-        input:
-            prealign_stats = os.path.join(result_path, "report", "prealigned", "{sample_run}.prealign.stats.tsv"),
-        wildcard_constraints:
-            sample_run="|".join(annot.index.tolist())
-        output:
-            prealign_stats = os.path.join(result_path, 'report', '{sample_run}.prealign.stats.tsv'),
-        resources:
-            mem_mb=config["resources"].get("mem_mb", 1000),
-            runtime = 5,
-        threads: 1
-        log:
-            os.path.join("logs", "rules", "symlink_prealign_stats_{sample_run}.log")
-        shell:
-            """
-            ln -sfn $(realpath --relative-to=$(dirname {output.prealign_stats}) {input.prealign_stats}) {output.prealign_stats}
-            """
 
 rule symlink_stats:
     input:
@@ -179,7 +160,7 @@ rule multiqc:
         sample_annotation = annotation_sheet_path,
         sample_names_file = os.path.join(result_path, 'report', 'multiqc_sample_names.txt'),
         # Collect prealign stats if enabled (per sample_run, will be averaged per sample in MultiQC)
-        prealign_stats = expand(os.path.join(result_path, 'report', '{sample_run}.prealign.stats.tsv'), sample_run=annot.index.tolist()) if has_prealignments else [],
+        prealign_stats = expand(os.path.join(result_path, 'report',"prealigned", '{sample_run}.prealign.stats.tsv'), sample_run=annot.index.tolist()) if has_prealignments else [],
     output:
         multiqc_report = report(os.path.join(result_path,"report","multiqc_report.html"),
                                 caption="../report/multiqc.rst",

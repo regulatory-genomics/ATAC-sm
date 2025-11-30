@@ -468,11 +468,10 @@ class MultiqcModule(BaseMultiqcModule):
         
         add_header_if_visible('percent_filtered', {
             'description': 'Percentage of reads filtered during prealignment',
-            'title': 'Prealign\nFiltered %',
+            'title': 'Prealign\nFiltered',
             'scale': 'Reds-rev',
             'min': 0.0,
-            'max': 100.0,
-            'suffix': '%',
+            'max': 1.0,
             'format': '{:.2f}'
         })
         
