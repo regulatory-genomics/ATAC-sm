@@ -85,6 +85,60 @@ rule symlink_stats:
         ln -sfn $(realpath --relative-to=$(dirname {output.peaks_xls}) {input.peaks_xls}) {output.peaks_xls}
         """
 
+rule generate_multiqc_sample_names:
+    input:
+        sample_annotation = annotation_sheet_path,
+    output:
+        sample_names_file = os.path.join(result_path, 'report', 'multiqc_sample_names.txt'),
+    resources:
+        mem_mb=config["resources"].get("mem_mb", 1000),
+        runtime = 5,
+    threads: 1
+    log:
+        "logs/rules/generate_multiqc_sample_names.log"
+    run:
+        import pandas as pd
+        import os
+        
+        # Read annotation file
+        annot_df = pd.read_csv(input.sample_annotation)
+        
+        # Create mapping file: fastq_filename_base -> sample_name
+        # MultiQC extracts sample names from fastq filenames in the fastp JSON
+        # We map those to the sample_name from annotation CSV
+        # Use a dict to avoid duplicate mappings
+        name_mapping = {}
+        
+        for _, row in annot_df.iterrows():
+            sample_name = str(row['sample_name'])
+            
+            # Extract R1 filename base (what MultiQC will use)
+            if 'R1' in row and pd.notna(row['R1']):
+                r1_path = str(row['R1'])
+                # Handle PEP derive modifier (raw_data|filename)
+                if '|' in r1_path:
+                    r1_path = r1_path.split('|', 1)[1]
+                # Extract base filename without extension
+                r1_basename = os.path.basename(r1_path)
+                # Remove extensions (.fastq.gz, .fq.gz, etc.)
+                r1_base = r1_basename.split('.')[0]
+                # Map R1 base name -> sample_name
+                name_mapping[r1_base] = sample_name
+                
+                # Also map R2 if it exists (for completeness)
+                if 'R2' in row and pd.notna(row['R2']):
+                    r2_path = str(row['R2'])
+                    if '|' in r2_path:
+                        r2_path = r2_path.split('|', 1)[1]
+                    r2_basename = os.path.basename(r2_path)
+                    r2_base = r2_basename.split('.')[0]
+                    name_mapping[r2_base] = sample_name
+        
+        # Write the mapping file (tab-separated: original_name -> new_name)
+        with open(output.sample_names_file, 'w') as f:
+            for original_name, new_name in sorted(name_mapping.items()):
+                f.write(f"{original_name}\t{new_name}\n")
+
 rule multiqc:
     input:
         expand(os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam"), sample=samples.keys()),
@@ -99,6 +153,7 @@ rule multiqc:
         expand(os.path.join(result_path, 'report', '{sample}.samblaster.log'), sample=samples.keys()),
         expand(os.path.join(result_path, 'report', '{sample}.samtools_flagstat.log'), sample=samples.keys()),
         sample_annotation = annotation_sheet_path,
+        sample_names_file = os.path.join(result_path, 'report', 'multiqc_sample_names.txt'),
     output:
         multiqc_report = report(os.path.join(result_path,"report","multiqc_report.html"),
                                 caption="../report/multiqc.rst",
@@ -122,7 +177,7 @@ rule multiqc:
         "logs/rules/multiqc.log"
     shell:
         """
-        multiqc {params.result_path}/report --force --verbose --outdir {params.result_path}/report --filename multiqc_report.html --cl-config "{params.multiqc_configs}"
+        multiqc {params.result_path}/report --force --verbose --outdir {params.result_path}/report --filename multiqc_report.html --replace-names {input.sample_names_file} --cl-config "{params.multiqc_configs}"
         """
 
 # visualize sample annotation (including QC metrics)
@@ -148,22 +203,3 @@ rule plot_sample_annotation:
         "../envs/ggplot.yaml"
     script:
         "../scripts/plot_sample_annotation.R"
-
-rule aggregate_stats:
-    input:
-        peak_stats = os.path.join(result_path, 'report', "peaks_stats", '{sample}.peak.stats.tsv'),
-    wildcard_constraints:
-        sample="|".join(samples.keys())
-    output:
-        os.path.join(result_path, 'report', "peaks_stats", '{sample}.stats.tsv'),
-    resources:
-        mem_mb=config["resources"].get("mem_mb", 1000),
-        runtime = 1,
-    threads: config["resources"].get("threads", 2)
-    log:
-        "logs/rules/aggregate_stats_{sample}.log"
-    shell:
-        """
-        cat {input.peak_stats} > {output}
-        """
-

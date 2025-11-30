@@ -39,3 +39,18 @@ def atacseq_report_execution_start():
         log.info("updated config.sp for atacseq")
     if 'atacseq/tss' not in config.sp:
         config.update_dict(config.sp, {'atacseq/tss': {'fn': '*TSS.csv', 'contents': 'count'}})
+    if 'atacseq/align_stats' not in config.sp:
+        config.update_dict(config.sp, {'atacseq/align_stats': {'fn': '*.align.stats.tsv', 'contents': 'mitochondrial_fraction'}})
+        log.info("updated config.sp for atacseq/align_stats")
+    else:
+        log.info("atacseq/align_stats search pattern already exists in config.sp")
+
+
+def atacseq_report_after_modules():
+    """
+    Hook that runs after all modules are initialized.
+    This allows us to access data from other modules like Sambamba/Samblaster.
+    """
+    # This hook runs after modules, but we'll handle data access in the module itself
+    # using a different approach
+    pass

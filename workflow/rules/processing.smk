@@ -542,7 +542,7 @@ rule peak_annotation:
         peak_annot_log = os.path.join(result_path,"important_processed","peaks","{sample}_peaks.narrowPeak.annotated.tsv.log"),
         homer_knownResults = os.path.join(result_path,"downstream_res","homer","{sample}","knownResults.txt"),
         homer_log = os.path.join(result_path,"downstream_res","homer","{sample}.homer.log"),
-        stats = os.path.join(result_path, 'report', 'peaks_stats', '{sample}.peak.stats.tsv'),
+        stats = os.path.join(result_path, 'report', 'peaks_stats', '{sample}.stats.tsv'),
     params:
         peaks_dir = os.path.join(result_path,"important_processed","peaks"),
         homer_dir = os.path.join(result_path,"downstream_res","homer","{sample}"),

@@ -2,6 +2,6 @@ sample_name,run,read_type,organism,R1,R2,passqc
 test,1,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1
 test,2,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1
 test,3,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1
-test,4,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,0
-test,5,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1
-test,6,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1
+test2,1,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,0
+test2,2,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1
+test2,3,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1

@@ -53,6 +53,90 @@ class MultiqcModule(BaseMultiqcModule):
             self.atacseq_tss_data[f['s_name']], self.atacseq_data[my_sample_name]['tss_max'] = self.parse_atacseq_tss(f['f'])
         log.info('Found TSS file for {} ATAC-seq samples'.format(len(self.atacseq_tss_data)))
         
+        # Parse align_stats for each sample (contains mitochondrial_fraction)
+        log.info('Searching for align_stats files with pattern atacseq/align_stats')
+        # Check if search pattern exists
+        if 'atacseq/align_stats' not in config.sp:
+            log.warning('Search pattern atacseq/align_stats not found in config.sp! Available patterns: {}'.format(list(config.sp.keys())))
+        else:
+            log.debug('Search pattern atacseq/align_stats found in config.sp: {}'.format(config.sp.get('atacseq/align_stats')))
+        
+        align_stats_files = list(self.find_log_files(sp_key='atacseq/align_stats'))
+        log.info('Found {} align_stats files using search pattern'.format(len(align_stats_files)))
+        
+        if len(align_stats_files) == 0:
+            # Try to find files manually for debugging
+            log.warning('No align_stats files found with search pattern. Checking all found files...')
+            all_files = list(self.find_log_files())
+            align_files = [f for f in all_files if 'align.stats' in f.get('fn', '')]
+            log.warning('Found {} files with "align.stats" in filename: {}'.format(
+                len(align_files), [f.get('fn', '') for f in align_files]))
+            # Also try without the search pattern key
+            log.warning('Trying to find files with pattern *.align.stats.tsv directly...')
+            direct_files = [f for f in all_files if f.get('fn', '').endswith('.align.stats.tsv')]
+            log.warning('Found {} files ending with .align.stats.tsv: {}'.format(
+                len(direct_files), [f.get('fn', '') for f in direct_files]))
+        
+        for f in align_stats_files:
+            # Extract sample name from filename (e.g., "sample.align.stats.tsv" -> "sample")
+            # The filename is like "test.align.stats.tsv", extract "test"
+            s_name = f['s_name']
+            if s_name.endswith('.align.stats'):
+                sample_name = s_name.replace('.align.stats', '')
+            elif s_name.endswith('.align'):
+                sample_name = s_name.replace('.align', '')
+            else:
+                sample_name = s_name
+            
+            log.debug('Processing align_stats file: {} -> s_name: {} -> sample: {}'.format(f.get('fn', ''), s_name, sample_name))
+            align_stats_data = self.parse_align_stats(f['f'])
+            # Merge align_stats data into atacseq_data
+            if sample_name not in self.atacseq_data:
+                self.atacseq_data[sample_name] = {}
+            self.atacseq_data[sample_name].update(align_stats_data)
+            log.debug('Parsed align_stats for {}: {}'.format(sample_name, align_stats_data))
+        log.info('Found align_stats file for {} ATAC-seq samples'.format(len(align_stats_files)))
+        
+        # Parse Samblaster logs for n_tot and n_nondups
+        # Samblaster logs contain: "Marked X of Y (Z%) read ids as duplicates"
+        # n_dups = X, n_tot = Y, n_nondups = Y - X
+        log.info('Searching for Samblaster log files...')
+        samblaster_files = list(self.find_log_files('samblaster'))
+        log.info('Found {} Samblaster log files'.format(len(samblaster_files)))
+        
+        for f in samblaster_files:
+            sample_name = f['s_name']
+            log.debug('Processing Samblaster log for sample: {}'.format(sample_name))
+            
+            # Parse the log file
+            for line in f['f'].splitlines():
+                if 'Marked' in line and 'read ids as duplicates' in line:
+                    # Example: "samblaster: Marked 3894 of 7458 (52.21%) read ids as duplicates using 2864k memory in 0.014S CPU seconds and 22S wall time."
+                    import re
+                    match = re.search(r'Marked\s+(\d+)\s+of\s+(\d+)', line)
+                    if match:
+                        n_dups = int(match.group(1))
+                        n_tot = int(match.group(2))
+                        n_nondups = n_tot - n_dups
+                        
+                        if sample_name not in self.atacseq_data:
+                            self.atacseq_data[sample_name] = {}
+                        
+                        self.atacseq_data[sample_name]['n_tot'] = n_tot
+                        self.atacseq_data[sample_name]['n_nondups'] = n_nondups
+                        self.atacseq_data[sample_name]['n_dups'] = n_dups
+                        
+                        # Calculate NRF (Non-Redundant Fraction) = 1 - duplication_rate = n_nondups / n_tot
+                        if n_tot > 0:
+                            nrf = float(n_nondups) / float(n_tot)
+                            self.atacseq_data[sample_name]['nrf'] = nrf
+                        else:
+                            self.atacseq_data[sample_name]['nrf'] = 0.0
+                        
+                        log.debug('Parsed Samblaster for {}: n_tot={}, n_nondups={}, n_dups={}, nrf={:.4f}'.format(
+                            sample_name, n_tot, n_nondups, n_dups, self.atacseq_data[sample_name]['nrf']))
+                        break
+        
         # Remove ignored samples if there is any
         self.atacseq_tss_data = self.ignore_samples(self.atacseq_tss_data)
         # Remove ignored samples if there is any
@@ -76,7 +160,12 @@ class MultiqcModule(BaseMultiqcModule):
         self.genome_version = config.genome
 
         # Add stats to general table
+        # Note: This is called during module initialization, so other modules' data
+        # might not be available yet. We'll try to access it, but if not available,
+        # the columns will still be added (they just won't have data)
+        log.info('Calling add_atacseq_to_general_stats()...')
         self.add_atacseq_to_general_stats()
+        log.info('Finished add_atacseq_to_general_stats()')
 
         # Add download links table
         self.add_download_table()
@@ -106,7 +195,83 @@ class MultiqcModule(BaseMultiqcModule):
                 data[int(s[0])] = float(s[1])
         return data, max_value
 
+    def parse_align_stats(self, f):
+        """
+        Parse align_stats file which contains mitochondrial_fraction.
+        Format: metric\tvalue (single line)
+        """
+        data = {}
+        for l in f.splitlines():
+            l = l.strip()
+            if not l:  # Skip empty lines
+                continue
+            s = l.split('\t')
+            if len(s) >= 2:
+                metric = s[0].strip()
+                value = s[1].strip()
+                data[metric] = value
+        return data
+
     def add_atacseq_to_general_stats(self):
+        # Get Sambamba/Samblaster data from MultiQC's built-in module (n_tot, n_nondups)
+        # MultiQC automatically parses these logs - access via the general_stats_data dict
+        # which is populated by BaseMultiqcModule
+        sambamba_data = None
+        module_name = None
+        
+        # Access general_stats_data from the report object
+        # In MultiQC, this is populated as modules add their data
+        try:
+            from multiqc.utils import report
+            log.debug('Checking report.general_stats_data availability...')
+            # Try accessing general_stats_data directly
+            if hasattr(report, 'general_stats_data'):
+                log.debug('report.general_stats_data exists: {}'.format(bool(report.general_stats_data)))
+                if report.general_stats_data:
+                    available_modules = list(report.general_stats_data.keys())
+                    log.info('Available modules in general_stats_data: {}'.format(available_modules))
+                    # Check for sambamba module (Sambamba markdup)
+                    if 'sambamba' in report.general_stats_data:
+                        sambamba_data = report.general_stats_data['sambamba']
+                        module_name = 'sambamba'
+                        log.info('Found Sambamba module data with {} samples'.format(len(sambamba_data)))
+                    # Check for samblaster module (alternative)
+                    elif 'samblaster' in report.general_stats_data:
+                        sambamba_data = report.general_stats_data['samblaster']
+                        module_name = 'samblaster'
+                        log.info('Found Samblaster module data with {} samples'.format(len(sambamba_data)))
+                        # Debug: show sample names and available keys
+                        for sample in list(sambamba_data.keys())[:3]:  # Show first 3 samples
+                            log.debug('Samblaster sample {} has keys: {}'.format(sample, list(sambamba_data[sample].keys())))
+                    else:
+                        log.warning('Neither sambamba nor samblaster found in general_stats_data')
+                else:
+                    log.warning('report.general_stats_data is empty or None')
+            else:
+                log.warning('report.general_stats_data attribute does not exist')
+        except Exception as e:
+            log.warning('Could not access report.general_stats_data: {}'.format(str(e)))
+            import traceback
+            log.debug(traceback.format_exc())
+        
+        # Extract n_tot and n_nondups from Sambamba/Samblaster data
+        if sambamba_data:
+            for sample_name in sambamba_data:
+                if sample_name not in self.atacseq_data:
+                    self.atacseq_data[sample_name] = {}
+                sample_data = sambamba_data[sample_name]
+                # Extract n_tot and n_nondups
+                if 'n_tot' in sample_data:
+                    self.atacseq_data[sample_name]['n_tot'] = sample_data['n_tot']
+                    log.debug('Added n_tot={} for sample {}'.format(sample_data['n_tot'], sample_name))
+                if 'n_nondups' in sample_data:
+                    self.atacseq_data[sample_name]['n_nondups'] = sample_data['n_nondups']
+                    log.debug('Added n_nondups={} for sample {}'.format(sample_data['n_nondups'], sample_name))
+            num_samples = len([s for s in sambamba_data if 'n_tot' in sambamba_data.get(s, {})])
+            log.info('Extracted n_tot/n_nondups for {} samples from {} module'.format(num_samples, module_name))
+        else:
+            log.warning('Sambamba/Samblaster module data not found - n_tot/n_nondups columns will be empty')
+        
         data = {}
         for sample_name in self.atacseq_data:
             data[sample_name] = {}
@@ -156,9 +321,41 @@ class MultiqcModule(BaseMultiqcModule):
             if 'mitochondrial_fraction' in self.atacseq_data[sample_name]:
                 try:
                     value = float(self.atacseq_data[sample_name]['mitochondrial_fraction'])
+                    data[sample_name]['mitochondrial_fraction'] = value
+                    log.debug('Added mitochondrial_fraction={} for sample {}'.format(value, sample_name))
+                except (ValueError, TypeError) as e:
+                    log.warning('Could not convert mitochondrial_fraction to float for sample {}: {}'.format(sample_name, str(e)))
+                    data[sample_name]['mitochondrial_fraction'] = None
+            else:
+                log.debug('mitochondrial_fraction not found for sample: {} (available keys: {})'.format(
+                    sample_name, list(self.atacseq_data[sample_name].keys())))
+            
+            if 'n_tot' in self.atacseq_data[sample_name]:
+                try:
+                    value = int(self.atacseq_data[sample_name]['n_tot'])
                 except:
                     value = None
-                data[sample_name]['mitochondrial_fraction'] = value
+                data[sample_name]['n_tot'] = value
+            else:
+                log.debug('n_tot not found for sample: {}'.format(sample_name))
+            
+            if 'n_nondups' in self.atacseq_data[sample_name]:
+                try:
+                    value = int(self.atacseq_data[sample_name]['n_nondups'])
+                except:
+                    value = None
+                data[sample_name]['n_nondups'] = value
+            else:
+                log.debug('n_nondups not found for sample: {}'.format(sample_name))
+            
+            if 'nrf' in self.atacseq_data[sample_name]:
+                try:
+                    value = float(self.atacseq_data[sample_name]['nrf'])
+                except:
+                    value = None
+                data[sample_name]['nrf'] = value
+            else:
+                log.debug('nrf not found for sample: {}'.format(sample_name))
         headers = OrderedDict()
         if hasattr(config, 'exploratory_columns'):
             for column in config.exploratory_columns:
@@ -169,81 +366,129 @@ class MultiqcModule(BaseMultiqcModule):
                     'scale': False }
         else:
             log.warning("No exploratory columns were specified in the config")
+        
+        # Get list of columns to show/hide from config (if provided)
+        visible_columns = getattr(config, 'atacseq_general_stats_columns', None)
+        if visible_columns is not None:
+            log.info('Using config-specified columns for General Statistics: {}'.format(visible_columns))
+        
+        # Helper function to conditionally add columns
+        def add_header_if_visible(key, header_config):
+            """Add header only if visible_columns is None (all visible) or key is in visible_columns"""
+            if visible_columns is None or key in visible_columns:
+                headers[key] = header_config
+            else:
+                # Still add but mark as hidden
+                header_config['hidden'] = True
+                headers[key] = header_config
 
-        headers['peaks'] = {
+        add_header_if_visible('peaks', {
             'description': 'Number of detected peaks',
             'title': 'Peaks',
             'scale': 'Greens',
             'format': '{:,.0f}'
-        }
-        headers['filtered_peaks'] = {
+        })
+        
+        add_header_if_visible('filtered_peaks', {
             'description': 'Number of peaks remaining after filtering',
             'title': 'Filtered\nPeaks',
             'scale': 'Greens',
             'format': '{:,.0f}'
-        }
-        headers['NSC'] = {
+        })
+        
+        add_header_if_visible('NSC', {
             'description': 'Normalized Strand Cross-correlation Coefficient',
             'title': 'NSC',
             'scale': 'Reds',
             'min': 0.0,
             'max': 2.0,
             'format': '{:.2f}'
-        }
-        headers['NSC_PCT'] = {
+        })
+        
+        add_header_if_visible('NSC_PCT', {
             'description': 'NSC Percentile Among All ATAC-seq samples',
             'title': 'NSC_PCT',
             'scale': 'Reds',
             'suffix': '%',
             'max': 100,
             'format': '{:,.0f}'
-        }
-        headers['RSC'] = {
+        })
+        
+        add_header_if_visible('RSC', {
             'description': 'Relative Strand Cross-correlation Coefficient',
             'title': 'RSC',
             'scale': 'Reds',
             'min': 0.0,
             'max': 2.0,
             'format': '{:.2f}'
-        }
-        headers['RSC_PCT'] = {
+        })
+        
+        add_header_if_visible('RSC_PCT', {
             'description': 'RSC Percentile Among All ATAC-seq samples',
             'title': 'RSC_PCT',
             'scale': 'Reds',
             'suffix': '%',
             'max': 100,
             'format': '{:,.0f}'
-        }
-        headers['frip'] = {
+        })
+        
+        add_header_if_visible('frip', {
             'description': 'Fraction of Reads in Peaks',
             'title': 'FRiP',
             'scale': 'Reds-rev',
             'min': 0.0,
             'max': 1.0,
             'format': '{:.2f}'
-        }
-        headers['regulatory_fraction'] = {
+        })
+        
+        add_header_if_visible('regulatory_fraction', {
             'description': 'Fraction of Reads in Regulatory Regions',
             'title': 'Regulatory',
             'scale': 'Reds-rev',
             'min': 0.0,
             'max': 1.0,
             'format': '{:.2f}'
-        }
-        headers['tss_max'] = {
+        })
+        
+        add_header_if_visible('tss_max', {
             'description': 'The peak value of TSS enrichment',
             'title': 'TSS',
             'scale': 'Reds-rev',
             'format': '{:.1f}'
-        }
-        headers['mitochondrial_fraction'] = {
+        })
+        
+        add_header_if_visible('mitochondrial_fraction', {
             'description': 'Fraction of Reads from Mitochondria',
             'title': 'Mitochondrial DNA',
             'scale': 'Reds-rev',
             'min': 0.0,
             'max': 1.0,
             'format': '{:.2f}'
-        }
+        })
+        
+        add_header_if_visible('n_tot', {
+            'description': 'Total number of alignments processed by Sambamba markdup',
+            'title': 'Total\nAlignments',
+            'scale': 'Blues',
+            'format': '{:,.0f}'
+        })
+        
+        add_header_if_visible('n_nondups', {
+            'description': 'Number of non-duplicate alignments from Sambamba markdup',
+            'title': 'Non-Duplicate\nAlignments',
+            'scale': 'Greens',
+            'format': '{:,.0f}'
+        })
+        
+        add_header_if_visible('nrf', {
+            'description': 'Non-Redundant Fraction (1 - duplication rate)',
+            'title': 'NRF',
+            'scale': 'Greens',
+            'min': 0.0,
+            'max': 1.0,
+            'format': '{:.4f}'
+        })
+        
         self.general_stats_addcols(data, headers)
 
     def add_download_table(self):
