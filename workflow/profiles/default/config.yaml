@@ -1,11 +1,13 @@
 executor: slurm
-jobs: 100                     # Max concurrent jobs to submit
+jobs: 400                     # Max concurrent jobs to submit
 retries: 2                    # Retry failed jobs twice (good for network blips)
 latency-wait: 60              # Wait 60s for files to appear (Fixes "MissingOutputException")
 use-conda: true               # You are using conda environments
 # Default resources for rules that don't specify them
 default-resources:
   slurm_partition: "intel-sc3"     # CHANGE THIS: Use 'sinfo' to find your default partition
+  slurm_qos: "huge"
+  qos: "huge"
   runtime: 60                 # Default time in minutes (1 hour)
   mem_mb: 4000                # Default memory (4GB)
   slurm_account: "zhangkai" # Optional: if your cluster requires account tracking

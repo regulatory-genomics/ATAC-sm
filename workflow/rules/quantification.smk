@@ -172,3 +172,90 @@ rule map_consensus_tss:
         "logs/rules/quantification/map_consensus_tss.log"
     script:
         "../scripts/map_consensus_tss.py"
+
+# count reads per peak for each sample using bedtools multicov
+rule count_peaks_sample:
+    input:
+        merged_peaks = os.path.join(result_path, "downstream_res", "merged_peaks", "merged_peaks.bed"),
+        bam = os.path.join(result_path, "important_processed", "bam", "{sample}.filtered.bam"),
+        bai = os.path.join(result_path, "important_processed", "bam", "{sample}.filtered.bam.bai"),
+    output:
+        counts = os.path.join(result_path, "downstream_res", "quantification", "merged_peaks", "{sample}_counts.txt"),
+    resources:
+        mem_mb=3*config["resources"].get("mem_mb", 16000),
+    threads: 4*config["resources"].get("threads", 2)
+    conda:
+        "../envs/pybedtools.yaml",
+    log:
+        "logs/rules/quantification/count_peaks_sample_{sample}.log"
+    wildcard_constraints:
+        sample="|".join(samples.keys())
+    shell:
+        """
+        mkdir -p $(dirname {output.counts})
+        # Run bedtools multicov and extract only the count column (last column)
+        bedtools multicov -bams {input.bam} -bed {input.merged_peaks} | awk '{{print $NF}}' > {output.counts}
+        # Add sample name as header
+        sed -i "1s/^/{wildcards.sample}\\n/" {output.counts}
+        """
+
+# aggregate count matrix from all samples
+rule count_peaks_matrix:
+    input:
+        merged_peaks = os.path.join(result_path, "downstream_res", "merged_peaks", "merged_peaks.bed"),
+        sample_counts = expand(
+            os.path.join(result_path, "downstream_res", "quantification", "merged_peaks", "{sample}_counts.txt"),
+            sample=samples.keys()
+        ),
+        sample_annotation = annotation_sheet_path,
+    output:
+        count_matrix = os.path.join(result_path, "downstream_res", "quantification", "merged_peaks_count_matrix.txt"),
+    resources:
+        mem_mb=config["resources"].get("mem_mb", 32000),
+    threads: config["resources"].get("threads", 2)
+    log:
+        "logs/rules/quantification/count_peaks_matrix.log"
+    run:
+        import pandas as pd
+        import os
+        
+        # Read merged peaks file to determine number of columns
+        peaks_df = pd.read_csv(input.merged_peaks, sep='\t', header=None, nrows=1)
+        n_cols = peaks_df.shape[1]
+        
+        # Read full peaks file with appropriate column names
+        if n_cols >= 4:
+            peaks_df = pd.read_csv(input.merged_peaks, sep='\t', header=None, 
+                                  names=['chr', 'start', 'end', 'peak_id'])
+        else:
+            peaks_df = pd.read_csv(input.merged_peaks, sep='\t', header=None, 
+                                  names=['chr', 'start', 'end'])
+            # Create peak_id column if it doesn't exist
+            peaks_df['peak_id'] = peaks_df.index.to_series().apply(lambda x: f"peak_{x+1:06d}")
+        
+        # Extract coordinate columns
+        final_matrix = peaks_df[['chr', 'start', 'end', 'peak_id']].copy()
+        
+        # Read annotation file to maintain sample order (as in original bash script)
+        annot_df = pd.read_csv(input.sample_annotation)
+        # Get unique sample names in order (maintaining first occurrence order)
+        sample_order = annot_df['sample_name'].drop_duplicates().tolist()
+        # Filter to only samples that exist in samples.keys()
+        sample_order = [s for s in sample_order if s in samples.keys()]
+        
+        # Read count files in the correct order
+        for sample in sample_order:
+            count_file = os.path.join(result_path, "downstream_res", "quantification", "merged_peaks", f"{sample}_counts.txt")
+            if os.path.exists(count_file):
+                # Skip first line (header with sample name) and read counts
+                counts = pd.read_csv(count_file, header=None, skiprows=1, names=[sample])
+                final_matrix = pd.concat([final_matrix, counts], axis=1)
+        
+        # Save final matrix
+        os.makedirs(os.path.dirname(output.count_matrix), exist_ok=True)
+        final_matrix.to_csv(output.count_matrix, sep='\t', index=False)
+        
+        # Cleanup temporary count files
+        for count_file in input.sample_counts:
+            if os.path.exists(count_file):
+                os.remove(count_file)

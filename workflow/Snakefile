@@ -146,6 +146,7 @@ rule all:
         promoter_counts = os.path.join(result_path,"downstream_res","quantification","promoter_counts.csv"),
         tss_counts = os.path.join(result_path,"downstream_res","quantification","TSS_counts.csv"),
         HOMER_knownMotifs = os.path.join(result_path,"downstream_res","quantification","HOMER_knownMotifs.csv"),
+        merged_peaks_count_matrix = os.path.join(result_path,"downstream_res","quantification","merged_peaks_count_matrix.txt"),
         # ANNOTATION
         consensus_annotation = os.path.join(result_path,'downstream_res','annotation',"consensus_annotation.csv"),
         # QC - ATAQV

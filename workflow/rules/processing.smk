@@ -70,12 +70,13 @@ if has_prealignments:
             stats = os.path.join(result_path, "report", "prealigned", "{sample_run}.prealign.stats.tsv"),
         params:
             prealignments = prealignments,
-            aligner = config["alignment"].get("tool", "bowtie2"),
-            prealign_dir = lambda w: os.path.join(result_path, "results", w.sample_run, "prealign"),
+            aligner = config["alignment"].get("tool", "bwa-mem2"),
+            prealign_dir = lambda w: os.path.join(result_path, "middle_files", "prealigned"),
             is_paired = lambda w: annot.loc[w.sample_run, "read_type"] == "paired",
         resources:
-            mem_mb = config["resources"].get("mem_mb", 16000),
-        threads: config["resources"].get("threads", 2)
+            mem_mb =  64000,
+	        runtime = 300,
+        threads: 5*config["resources"].get("threads", 2)
         conda:
             "../envs/bwa.yaml" if config["alignment"].get("tool", "bowtie2") == "bwa-mem2" else "../envs/bowtie2.yaml"
         log:
@@ -300,16 +301,20 @@ if config["alignment"].get("tool", "bowtie2") == "bowtie2":
             ),
         resources:
             mem_mb=config["resources"].get("mem_mb", 16000),
-        threads: 4*config["resources"].get("threads", 2)
+	        runtime = 1000,
+        threads: 5*config["resources"].get("threads", 2)
         conda:
             "../envs/bowtie2.yaml",
         log:
             "logs/rules/align_{sample}.log"
         shell:
             """
-            mkdir -p $(dirname {output.bam})
+            mkdir -p $(dirname {output.bam}) $(dirname {output.bowtie_log})
             result_path=$(dirname {output.bam})
-            find $result_path -type f -name '*.bam.tmp.*' -exec rm {{}} +;
+            # Only delete temp files for this specific sample to avoid conflicts with parallel jobs
+            find $result_path -type f -name '{wildcards.sample}.filtered.bam.tmp.*' -delete 2>/dev/null || true
+            # Remove existing log files to allow reruns (they may be from previous failed attempts)
+            rm -f "{output.bowtie_log}" "{output.bowtie_met}" "{output.samblaster_log}" 2>/dev/null || true
             
             RG="--rg-id {wildcards.sample} --rg SM:{params.sample_name} --rg PL:{params.sequencing_platform}"
 
@@ -377,18 +382,21 @@ elif config["alignment"].get("tool", "bowtie2") == "bwa-mem2":
                 else f"-q 30 -F {config['filtering']['sam_flag']} -L {config['refs']['whitelist']}"
             ),
         resources:
-            mem_mb=64000,
+            mem_mb=100000,
             runtime = 800,
-        threads: 4*config["resources"].get("threads", 2)
+        threads: 5*config["resources"].get("threads", 2)
         conda:
             "../envs/bwa.yaml",
         log:
             "logs/rules/align_bwa_mem_{sample}.log"
         shell:
             """
-            mkdir -p $(dirname {output.bam})
+            mkdir -p $(dirname {output.bam}) $(dirname {output.bwa_log})
             result_path=$(dirname {output.bam})
-            find $result_path -type f -name '*.bam.tmp.*' -exec rm {{}} +;
+            # Only delete temp files for this specific sample to avoid conflicts with parallel jobs
+            find $result_path -type f -name '{wildcards.sample}.filtered.bam.tmp.*' -delete 2>/dev/null || true
+            # Remove existing log files to allow reruns (they may be from previous failed attempts)
+            rm -f "{output.bwa_log}" "{output.samblaster_log}" 2>/dev/null || true
             
             RG="@RG\\tID:{wildcards.sample}\\tSM:{params.sample_name}\\tPL:{params.sequencing_platform}"
 
@@ -624,7 +632,7 @@ rule merge_peaks:
     threads:
         config["resources"].get("threads", 1)
     resources:
-        mem_mb=1000,
+        mem_mb=40000,
         runtime = 30,
     params:
         chrom_sizes = config["refs"]["chrom_sizes"],

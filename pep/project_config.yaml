@@ -1,18 +1,15 @@
 pep_version: "2.0.0"
 project_name: macrophage_atac
 description: "PEP definition for the ATAC-seq workflow."
-sample_table: ../config/annotation.csv
+sample_table: ../config/20251130_sample.csv
 
 # Project-level path variables
 # These paths can be accessed via pep_project.config in Snakefile
 paths:
-  data_dir: "/storage/zhangkaiLab/hanlitian/macrophage/data/ATAC/test_data"
+  data_dir: "/storage/zhangkaiLab/resource/Collaborators/Hanjie_Li/ATAC-seq"
   process_dir: "/storage/zhangkaiLab/hanlitian/macrophage/process"
   database_dir: "/storage/zhangkaiLab/hanlitian/database/algin_ref/atac_pipeline"
   shared_genome_dir: "/storage/zhangkaiLab/shared/genomes/GRCh38"
 
-sample_modifiers:
-  derive:
-    attributes: [R1, R2]
-    sources:
-      raw_data: "/storage/zhangkaiLab/hanlitian/macrophage/data/ATAC/test_data/"
+# sample_modifiers removed - using absolute paths instead of PEP derive modifier
+# Paths are handled directly by the workflow's expand_pep_path function

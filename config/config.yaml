@@ -3,9 +3,9 @@ project:
   name: macrophage_atac
   genome: hg38
   # Output directory (can use {process_dir} placeholder from PEP)
-  out_dir: "{process_dir}/20251120_ATAC_test1"
+  out_dir: "{process_dir}/20251130_ATAC_run3"
   # Sample sheet / Annotation file (managed by PEP)
-  samples: ../config/annotation.csv
+  samples: ../config/20251130_sample.csv
   pep_config: ../pep/project_config.yaml
   read_type : paired # If you have mixed read_type, you should specify in your sample sheet.
 
@@ -60,7 +60,7 @@ peaks:
   macs2_shift: -75        # center 150bp window on Tn5 cut site
   macs2_extsize: 150      # 2 * |macs2_shift|
   macs2_format: "BED"     # enforce BED input for ATAC
-  macs2_pval: 1e-3
+  macs2_pval: 1e-4
 
 # 5. Annotation (UROPA)
 annotation:
