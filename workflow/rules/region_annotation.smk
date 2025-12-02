@@ -3,7 +3,7 @@
 # prepare configs for uropa
 rule uropa_prepare:
     input:
-        consensus_regions = os.path.join(result_path,"downstream_res","annotation","consensus_regions.bed"),
+        consensus_regions = os.path.join(result_path,"downstream_res", "merged_peaks", "merged_peaks.bed"),
         gencode_template = workflow.source_path(config["annotation"]["templates"]["gencode"]),
         regulatory_template = workflow.source_path(config["annotation"]["templates"]["regulatory"]),
         gencode_gtf = config["refs"]["gencode_gtf"],
@@ -53,14 +53,14 @@ rule uropa_prepare:
 # run uropa on consensus regions for gencode
 rule uropa_gencode:
     input:
-        consensus_regions = os.path.join(result_path,"downstream_res","annotation","consensus_regions.bed"),
+        consensus_regions = os.path.join(result_path,"downstream_res","merged_peaks","merged_peaks.bed"),
         gencode_config = os.path.join(result_path,"middle_files","annotation","consensus_regions_gencode.json"),
     output:
         gencode_results = os.path.join(result_path,"middle_files","annotation","gencode_finalhits.txt"),
     params:
         results_dir = os.path.join(result_path,"middle_files","annotation"),
     resources:
-        mem_mb=config["resources"].get("mem_mb", 16000),
+        mem_mb=4*config["resources"].get("mem_mb", 16000),
     threads: 4*config["resources"].get("threads", 2)
     conda:
         "../envs/uropa.yaml",
@@ -74,7 +74,7 @@ rule uropa_gencode:
 # run uropa on consensus regions for regulatory build
 rule uropa_reg:
     input:
-        consensus_regions = os.path.join(result_path,"downstream_res","annotation","consensus_regions.bed"),
+        consensus_regions = os.path.join(result_path,"downstream_res","merged_peaks","merged_peaks.bed"),
         reg_config = os.path.join(result_path,"middle_files","annotation","consensus_regions_reg.json"),
     output:
         reg_results = os.path.join(result_path,"middle_files","annotation","reg_finalhits.txt"),
@@ -95,7 +95,7 @@ rule uropa_reg:
 # peak annotation using homer
 rule homer_region_annotation:
     input:
-        consensus_regions = os.path.join(result_path,"downstream_res","annotation","consensus_regions.bed"),
+        consensus_regions = os.path.join(result_path,"downstream_res", "merged_peaks", "merged_peaks.bed"),
         homer_script = os.path.join(HOMER_path,"configureHomer.pl"),
     output:
         homer_annotations = os.path.join(result_path,"middle_files","annotation","homer_annotations.tsv"),
@@ -134,7 +134,7 @@ rule homer_region_annotation:
 # get gc content and region length
 rule bedtools_annotation:
     input:
-        consensus_regions = os.path.join(result_path,"downstream_res","annotation","consensus_regions.bed"),
+        consensus_regions = os.path.join(result_path,"downstream_res","merged_peaks","merged_peaks.bed"),
         genome_fasta = config["refs"]["fasta"],
     output:
         bedtools_annotation = os.path.join(result_path, "middle_files", "annotation", "bedtools_annotation.bed"),

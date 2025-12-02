@@ -621,31 +621,6 @@ rule peak_annotation:
         fi
         """
 
-rule merge_peaks:
-    input:
-        peak_calls = expand(
-            os.path.join(result_path, "important_processed", "peaks", "{sample}_peaks.narrowPeak"),
-            sample=get_samples_passing_qc(),
-        )
-    output:
-        os.path.join(result_path, "downstream_res", "merged_peaks", "merged_peaks.bed"),
-    threads:
-        config["resources"].get("threads", 1)
-    resources:
-        mem_mb=40000,
-        runtime = 30,
-    params:
-        chrom_sizes = config["refs"]["chrom_sizes"],
-    log:
-        "logs/rules/merge_peaks.log"
-    shell:
-        """
-        mkdir -p $(dirname {output})
-        workflow/scripts/merge_peaks --chrom-sizes {params.chrom_sizes} \
-            --half-width 250 \
-            --output {output} \
-            {input.peak_calls}
-        """
 
 # Generate bigWig tracks from BAM files for visualization
 rule tracks:

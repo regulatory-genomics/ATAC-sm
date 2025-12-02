@@ -69,6 +69,8 @@ rule ataqv:
         prefix = "{sample}"
     log:
         "logs/rules/ataqv/{sample}.log"
+    resources:
+        runtime = 100,
     conda:
         "../envs/ataqv.yaml"
     threads: config.get("ataqv_threads", 2)
@@ -99,6 +101,8 @@ rule mkarv:
         "logs/rules/mkarv/mkarv.log"
     conda:
         "../envs/ataqv.yaml"
+    resources:
+        mem_mb=64000,
     threads: config.get("mkarv_threads", 2)
     shell:
         """

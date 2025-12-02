@@ -40,31 +40,11 @@ rule get_promoter_regions:
         "logs/rules/annotation/get_promoter_regions.log"
     script:
         "../scripts/get_promoter_regions.py"
-        
-# generate consensus regions using (py)bedtools
-rule get_consensus_regions:
-    input:
-        summits_bed = expand(os.path.join(result_path,"important_processed","peaks","{sample}_summits.bed"), sample=samples.keys()),
-        blacklisted_regions = config["refs"]["blacklist"],
-        chromosome_sizes = config["refs"]["chrom_sizes"],
-    output:
-        consensus_regions = os.path.join(result_path,"downstream_res","annotation","consensus_regions.bed"),
-    params:
-        slop_extension = config["peaks"]["slop_extension"],
-    resources:
-        mem_mb=config["resources"].get("mem_mb", 16000),
-    threads: config["resources"].get("threads", 2)
-    conda:
-        "../envs/pybedtools.yaml",
-    log:
-        "logs/rules/annotation/get_consensus_regions.log"
-    script:
-        "../scripts/get_consensus_regions.py"
 
 # quantify coverage based on consensus regions support for every sample
 rule quantify_support_sample:
     input:
-        consensus_regions = os.path.join(result_path,"downstream_res","annotation","consensus_regions.bed"),
+        consensus_regions = os.path.join(result_path,"downstream_res", "merged_peaks", "merged_peaks.bed"),
         peakfile = os.path.join(result_path,"important_processed","peaks", "{sample}_summits.bed"),
         chromosome_sizes = config["refs"]["chrom_sizes"],
     output:
@@ -108,7 +88,7 @@ rule quantify_aggregate:
     output:
         os.path.join(result_path,"downstream_res","quantification","{kind}_counts.csv"),
     resources:
-        mem_mb=config["resources"].get("mem_mb", 32000),
+        mem_mb=3*config["resources"].get("mem_mb", 32000),
     threads: 2*config["resources"].get("threads", 2)
     conda:
         "../envs/datamash.yaml",
@@ -173,6 +153,33 @@ rule map_consensus_tss:
     script:
         "../scripts/map_consensus_tss.py"
 
+
+rule merge_peaks:
+    input:
+        peak_calls = expand(
+            os.path.join(result_path, "important_processed", "peaks", "{sample}_peaks.narrowPeak"),
+            sample=get_samples_passing_qc(),
+        )
+    output:
+        os.path.join(result_path, "downstream_res", "merged_peaks", "merged_peaks.bed"),
+    threads:
+        config["resources"].get("threads", 1)
+    resources:
+        mem_mb=40000,
+        runtime = 30,
+    params:
+        chrom_sizes = config["refs"]["chrom_sizes"],
+    log:
+        "logs/rules/merge_peaks.log"
+    shell:
+        """
+        mkdir -p $(dirname {output})
+        workflow/scripts/merge_peaks --chrom-sizes {params.chrom_sizes} \
+            --half-width 250 \
+            --output {output} \
+            {input.peak_calls}
+        """
+
 # count reads per peak for each sample using bedtools multicov
 rule count_peaks_sample:
     input:
@@ -183,6 +190,7 @@ rule count_peaks_sample:
         counts = os.path.join(result_path, "downstream_res", "quantification", "merged_peaks", "{sample}_counts.txt"),
     resources:
         mem_mb=3*config["resources"].get("mem_mb", 16000),
+        runtime = 200,
     threads: 4*config["resources"].get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
@@ -243,13 +251,19 @@ rule count_peaks_matrix:
         # Filter to only samples that exist in samples.keys()
         sample_order = [s for s in sample_order if s in samples.keys()]
         
-        # Read count files in the correct order
+        # Read count files in the correct order and add as columns
+        n_peaks = final_matrix.shape[0]
         for sample in sample_order:
             count_file = os.path.join(result_path, "downstream_res", "quantification", "merged_peaks", f"{sample}_counts.txt")
             if os.path.exists(count_file):
-                # Skip first line (header with sample name) and read counts
+                # Skip first line (header with sample name) and read counts as a single column
                 counts = pd.read_csv(count_file, header=None, skiprows=1, names=[sample])
-                final_matrix = pd.concat([final_matrix, counts], axis=1)
+                # Basic sanity check: number of rows must match number of peaks
+                if counts.shape[0] != n_peaks:
+                    raise ValueError(f"Count file {count_file} has {counts.shape[0]} rows, "
+                                     f"but merged_peaks has {n_peaks} rows.")
+                # Assign counts as a new column; avoid concat to dodge MultiIndex/axis-union issues
+                final_matrix[sample] = counts[sample].to_numpy()
         
         # Save final matrix
         os.makedirs(os.path.dirname(output.count_matrix), exist_ok=True)
