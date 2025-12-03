@@ -1,0 +1,5 @@
+name: mergepeak
+channels:
+  - gilberthan
+dependencies:
+  - merge-peaks=0.1.0

@@ -144,8 +144,10 @@ rule map_consensus_tss:
         tss_annot = os.path.join(result_path,"downstream_res","annotation","TSS_annotation.csv"),
         tss_bed = os.path.join(result_path,"downstream_res","annotation","TSS_regions.bed"),
     resources:
-        mem_mb=config["resources"].get("mem_mb", 16000),
-    threads: config["resources"].get("threads", 2)
+        # map_consensus_tss can be memory-heavy on large consensus matrices
+        mem_mb=4*config["resources"].get("mem_mb", 16000),
+        runtime = 240,
+    threads: 4*config["resources"].get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
     log:
@@ -169,13 +171,16 @@ rule merge_peaks:
         runtime = 30,
     params:
         chrom_sizes = config["refs"]["chrom_sizes"],
+    conda:
+        "../envs/mergepeak.yaml",
     log:
         "logs/rules/merge_peaks.log"
     shell:
         """
-        mkdir -p $(dirname {output})
-        workflow/scripts/merge_peaks --chrom-sizes {params.chrom_sizes} \
+        merge_peaks --chrom-sizes {params.chrom_sizes} \
             --half-width 250 \
+            --score-threshold 5 \
+            --overlap-threshold 1 \
             --output {output} \
             {input.peak_calls}
         """
