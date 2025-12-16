@@ -40,6 +40,9 @@ properties:
     enum:
       - paired
       - single
+  replicate_sample_name:
+    type: string
+    description: "replicate sample name"
   passqc:
     type: integer
     description: "whether passqc. 1 for pass, 0 for not"

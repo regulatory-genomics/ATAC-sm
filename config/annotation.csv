@@ -1,7 +1,7 @@
-sample_name,run,read_type,organism,R1,R2,passqc
-test,1,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1
-test,2,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1
-test,3,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1
-test2,1,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,0
-test2,2,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1
-test2,3,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1
+sample_name,run,read_type,organism,R1,R2,passqc,replicate_sample_name
+test,1,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1,test
+test,2,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1,test
+test,3,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1,test
+test2,1,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,0,test
+test2,2,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1,test
+test2,3,paired,human,raw_data|test1_R1.fastq.gz,raw_data|test1_R2.fastq.gz,1,test

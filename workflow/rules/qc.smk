@@ -115,3 +115,54 @@ rule mkarv:
             {input.jsons} 2> {log}
 
         """
+
+
+rule bamReproducibility:
+    """
+    Global reproducibility / correlation heatmap using deeptools:
+    - multiBamSummary bins
+    - plotCorrelation heatmap (Spearman)
+
+    This is a Snakemake translation of the provided SLURM script.
+    """
+    input:
+        bams = lambda w: [
+            os.path.join(result_path, "important_processed", "bam", f"{s}.filtered.bam")
+            for s in get_reproducibility_sample(w.sample_rep)
+        ]
+    output:
+        npz = temp(os.path.join(result_path, "report", "bamReproducibility", "{sample_rep}_global_rep.npz")),
+        heatmap = os.path.join(result_path, "report", "bamReproducibility", "{sample_rep}_global_rep_heatmap.pdf"),
+        matrix = os.path.join(result_path, "report", "bamReproducibility", "{sample_rep}_global_rep_cor.txt"),
+    params:
+        bin_size = 1000,
+        prefix = lambda w: w.sample_rep,
+    log:
+        "logs/rules/bamReproducibility/{sample_rep}_global_rep.log"
+    conda:
+        "../envs/dtools.yaml"
+    resources:
+        mem_mb = 28000,
+        runtime = 480,
+    threads: 20
+    shell:
+        """
+        mkdir -p $(dirname {output.npz})
+        mkdir -p $(dirname {log})
+
+        echo "Starting multiBamSummary..." >&2
+        multiBamSummary bins \
+          --bamfiles {input.bams} \
+          --binSize {params.bin_size} \
+          --numberOfProcessors {threads} \
+          --outFileName {output.npz} 2> {log}
+
+        echo "Starting plotCorrelation..." >&2
+        plotCorrelation \
+            --corData {output.npz} \
+            --corMethod spearman \
+            --whatToPlot heatmap \
+            --plotTitle "Spearman Correlation of {params.prefix}" \
+            --plotFile {output.heatmap} \
+            --outFileCorMatrix {output.matrix} 2>> {log}
+        """

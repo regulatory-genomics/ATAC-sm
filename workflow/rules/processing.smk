@@ -301,7 +301,7 @@ if config["alignment"].get("tool", "bowtie2") == "bowtie2":
             ),
         resources:
             mem_mb=config["resources"].get("mem_mb", 16000),
-	        runtime = 1000,
+            runtime = 1000,
         threads: 5*config["resources"].get("threads", 2)
         conda:
             "../envs/bowtie2.yaml",

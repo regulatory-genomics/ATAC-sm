@@ -25,6 +25,11 @@ def get_samples_passing_qc():
     
     return list(passing_samples) if passing_samples else []
 
+
+def get_reproducibility_sample(sample_rep):
+    sample = annot['sample_name'][annot['replicate_sample_name'] == sample_rep].unique().tolist()
+    return sample if len(sample) > 1 else []
+
 def get_units_fastqs(wildcards):
     """Get fastq files for a sample_run"""
     u = annot.loc[wildcards.sample_run]

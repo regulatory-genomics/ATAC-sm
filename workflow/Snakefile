@@ -24,8 +24,11 @@ report: os.path.join("report", "workflow.rst")
 envs = ["macs2_homer","multiqc","pybedtools","uropa","ggplot","ataqv"]
 
 # load config and sample annotation sheets #####
-configfile: os.path.join("config","config.yaml")
+configfile: os.path.join("config","config_test.yaml")
 validate(config, schema="../schemas/config.schema.yml")
+
+
+include: os.path.join("rules", "common.smk")
 
 # Load PEP project to get sample metadata
 pep_config_value = config["project"].get("pep_config", os.path.join("..","pep", "project_config.yaml"))
@@ -116,6 +119,20 @@ annot = annot.set_index('sample_run')
 # Get unique sample names (for downstream analysis)
 samples = annot.reset_index().drop_duplicates(subset='sample_name', keep='first').set_index("sample_name").to_dict(orient="index")
 
+# Get replicate sample groups (for reproducibility analysis), but only keep those with >1 sample (as determined by get_reproducibility_sample)
+if 'replicate_sample_name' in annot.columns:
+    all_replicate_names = (
+        annot['replicate_sample_name']
+        .dropna()
+        .astype(str)
+        .unique()
+        .tolist()
+    )
+    # Only keep replicate names with >1 associated sample
+    replicate_samples = [rep for rep in all_replicate_names if len(get_reproducibility_sample(rep)) > 1]
+else:
+    replicate_samples = []
+
 # Get the original annotation sheet path from PEP for export/reporting
 sample_table_entry = pep_project.config.get("sample_table")
 if sample_table_entry is None:
@@ -157,6 +174,11 @@ rule all:
         envs = expand(os.path.join(result_path,'envs','{env}.yaml'),env=envs),
         configs = os.path.join(result_path,'configs','{}_config.yaml'.format(config["project"]["name"])),
         annotations = os.path.join(result_path,'configs','{}_annot.csv'.format(config["project"]["name"])),
+        # GLOBAL REPRODUCIBILITY (deeptools), only if replicate_sample_name is defined
+        reproduciblity_result = expand(
+            os.path.join(result_path, "report", "bamReproducibility", "{sample_rep}_global_rep_cor.txt"),
+            sample_rep=replicate_samples
+        ) if len(replicate_samples) > 0 else [],
         merged_peaks = os.path.join(result_path,"downstream_res","merged_peaks","merged_peaks.bed"),
         tracks_out = expand(os.path.join(result_path, "important_processed", "tracks", "{sample}.bw"), sample=list(samples.keys())),
     resources:
@@ -167,7 +189,6 @@ rule all:
 
 ##### load rules #####
 include: os.path.join("rules", "export.smk")
-include: os.path.join("rules", "common.smk")
 include: os.path.join("rules", "resources.smk")
 include: os.path.join("rules", "genome_prepare.smk")
 include: os.path.join("rules", "processing.smk")
