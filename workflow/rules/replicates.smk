@@ -1,39 +1,34 @@
 # Replicate processing workflow
 # For each replicate: BAM -> tagAlign -> pseudo-replicates -> peaks -> combined peaks
 
-# Helper function to get replicate names
-# Assumes replicates are named as rep1, rep2, etc. or can be configured
+# Helper function to get replicate sample names from annotation
+# Uses replicate_sample_name column to group biological replicates
 def get_replicate_names():
-    """Get list of replicate names to process"""
-    # Check if replicates are specified in config
-    if "replicates" in config and "names" in config["replicates"]:
-        return config["replicates"]["names"]
-    # Otherwise, try to infer from sample names or annotation
-    # For now, return empty list - user should configure replicates
-    return []
+    """Get list of replicate group names from sample annotation"""
+    if 'replicate_sample_name' not in annot.columns:
+        return []
+    # Get unique replicate_sample_name values that have >1 sample
+    all_replicate_names = annot['replicate_sample_name'].dropna().astype(str).unique().tolist()
+    # Only keep replicate names with >1 associated sample
+    replicate_names = [rep for rep in all_replicate_names if len(get_reproducibility_sample(rep)) > 1]
+    return replicate_names
 
-# Get replicate BAM files
-def get_replicate_bam(replicate_name):
-    """Get BAM file path for a replicate"""
-    # Check if replicate BAM is specified in config
-    if "replicates" in config and "bam_files" in config["replicates"]:
-        if replicate_name in config["replicates"]["bam_files"]:
-            return config["replicates"]["bam_files"][replicate_name]
-    # Default: assume replicate BAM follows naming pattern
-    return os.path.join(result_path, "important_processed", "bam", f"{replicate_name}.filtered.bam")
+# Get sample names for a replicate group
+def get_samples_for_replicate(replicate_name):
+    """Get list of sample names belonging to a replicate group"""
+    return get_reproducibility_sample(replicate_name)
 
-# Determine if paired-end based on config or sample annotation
-def is_paired_end(replicate_name):
-    """Check if replicate is paired-end"""
-    if "replicates" in config and "paired_end" in config["replicates"]:
-        if isinstance(config["replicates"]["paired_end"], dict):
-            return config["replicates"]["paired_end"].get(replicate_name, False)
-        return config["replicates"]["paired_end"]
-    # Default: check from sample annotation if replicate matches a sample
-    for sample_name in samples.keys():
-        if replicate_name in sample_name or sample_name in replicate_name:
-            return samples[sample_name].get("read_type", "single") == "paired"
-    return False
+# Get BAM files for all samples in a replicate group
+def get_replicate_bams(replicate_name):
+    """Get BAM file paths for all samples in a replicate group"""
+    sample_names = get_samples_for_replicate(replicate_name)
+    return [os.path.join(result_path, "important_processed", "bam", f"{sample}.filtered.bam") for sample in sample_names]
+
+# Get tagAlign files for all samples in a replicate group
+def get_replicate_tagaligns(replicate_name):
+    """Get tagAlign file paths for all samples in a replicate group"""
+    sample_names = get_samples_for_replicate(replicate_name)
+    return [os.path.join(result_path, "middle_files", "bed", f"{sample}.tagAlign.gz") for sample in sample_names]
 
 # Helper function to get all combined pseudo-replicate peak files
 # Returns list of peak files: [rep1-pr1_vs_rep1-pr2.narrowPeak.gz, rep2-pr1_vs_rep2-pr2.narrowPeak.gz, ...]
@@ -45,60 +40,24 @@ def get_all_replicate_peaks_pr():
         for rep in replicate_names
     ]
 
-# Rule 1: Convert BAM to tagAlign for each replicate
-rule bam_to_tagalign_replicate:
+# Determine if paired-end based on first sample in replicate group
+def is_paired_end(replicate_name):
+    """Check if replicate is paired-end (based on first sample)"""
+    sample_names = get_samples_for_replicate(replicate_name)
+    if not sample_names:
+        return False
+    # Use first sample's read_type
+    first_sample = sample_names[0]
+    return samples[first_sample].get("read_type", "single") == "paired"
+
+# Rule 1: Pool tagAlign files from all samples in a replicate group
+rule pool_replicate_tagaligns:
     input:
-        bam = lambda w: get_replicate_bam(w.replicate),
-        bai = lambda w: get_replicate_bam(w.replicate) + ".bai",
+        tagaligns = lambda w: get_replicate_tagaligns(w.replicate),
     output:
-        tagalign = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.tagAlign.gz"),
+        pooled_tagalign = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.pooled.tagAlign.gz"),
     params:
         out_dir = lambda w: os.path.join(result_path, "middle_files", "replicates", w.replicate),
-        is_paired = lambda w: is_paired_end(w.replicate),
-        nth = config["resources"].get("threads", 2),
-    resources:
-        mem_mb = config["resources"].get("mem_mb", 16000),
-        runtime = 300,
-    threads: config["resources"].get("threads", 2)
-    conda:
-        "../envs/pybedtools.yaml"
-    log:
-        "logs/rules/replicates/bam_to_tagalign_{replicate}.log"
-    shell:
-        """
-        mkdir -p {params.out_dir}
-        
-        if [ "{params.is_paired}" = "True" ]; then
-            # Paired-end: name sort BAM first
-            nmsrt_bam="{params.out_dir}/{wildcards.replicate}.nmsrt.bam"
-            samtools sort -n -o "$nmsrt_bam" -@ {threads} {input.bam}
-            
-            # Convert to BEDPE then to tagAlign
-            bedpe="{params.out_dir}/{wildcards.replicate}.bedpe.gz"
-            bedtools bamtobed -bedpe -mate1 -i "$nmsrt_bam" | gzip -nc > "$bedpe"
-            rm -f "$nmsrt_bam"
-            
-            # Convert BEDPE to tagAlign (two lines per pair)
-            zcat -f "$bedpe" | awk 'BEGIN{{OFS="\\t"}}'
-                '{{printf "%s\\t%s\\t%s\\tN\\t1000\\t%s\\n%s\\t%s\\t%s\\tN\\t1000\\t%s\\n",'
-                '$1,$2,$3,$9,$4,$5,$6,$10}}' | gzip -nc > {output.tagalign}
-            rm -f "$bedpe"
-        else
-            # Single-end: direct conversion
-            bedtools bamtobed -i {input.bam} | \
-            awk 'BEGIN{{OFS="\\t"}}{{$4="N";$5="1000";print $0}}' | \
-            gzip -nc > {output.tagalign}
-        fi
-        """
-
-# Rule 2: Apply TN5 shift to tagAlign (optional, based on config)
-rule tn5_shift_tagalign_replicate:
-    input:
-        tagalign = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.tagAlign.gz"),
-    output:
-        shifted_tagalign = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.tn5.tagAlign.gz"),
-    params:
-        disable_tn5_shift = config.get("replicates", {}).get("disable_tn5_shift", False),
     resources:
         mem_mb = config["resources"].get("mem_mb", 16000),
         runtime = 60,
@@ -106,23 +65,19 @@ rule tn5_shift_tagalign_replicate:
     conda:
         "../envs/pybedtools.yaml"
     log:
-        "logs/rules/replicates/tn5_shift_{replicate}.log"
+        "logs/rules/replicates/pool_tagaligns_{replicate}.log"
     shell:
         """
-        if [ "{params.disable_tn5_shift}" = "True" ]; then
-            cp {input.tagalign} {output.shifted_tagalign}
-        else
-            zcat -f {input.tagalign} | awk 'BEGIN {{OFS = "\\t"}} {{
-                if ($6 == "+") {{$2 = $2 + 4}} else if ($6 == "-") {{$3 = $3 - 5}} 
-                if ($2 >= $3) {{ if ($6 == "+") {{$2 = $3 - 1}} else {{$3 = $2 + 1}} }} 
-                print $0}}' | gzip -nc > {output.shifted_tagalign}
-        fi
+        mkdir -p {params.out_dir}
+        # Pool all tagAlign files by concatenating
+        zcat {input.tagaligns} | gzip -nc > {output.pooled_tagalign}
         """
 
-# Rule 3: Split tagAlign into pseudo-replicates
+
+# Rule 2: Split pooled tagAlign into pseudo-replicates
 rule split_pseudoreplicates_replicate:
     input:
-        tagalign = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.tn5.tagAlign.gz"),
+        tagalign = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.pooled.tagAlign.gz"),
     output:
         pr1 = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.pr1.tagAlign.gz"),
         pr2 = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.pr2.tagAlign.gz"),
@@ -162,11 +117,11 @@ rule split_pseudoreplicates_replicate:
             split -d -l $nlines - "$prefix."
             
             # Restore paired-end format
-            zcat -f "$tmp_pr1" | awk 'BEGIN{{OFS="\\t"}} '
+            cat "$tmp_pr1" | awk 'BEGIN{{OFS="\\t"}} '
                 '{{printf "%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n",'
                 '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12}}' | gzip -nc > {output.pr1}
             
-            zcat -f "$tmp_pr2" | awk 'BEGIN{{OFS="\\t"}} '
+            cat "$tmp_pr2" | awk 'BEGIN{{OFS="\\t"}} '
                 '{{printf "%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n",'
                 '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12}}' | gzip -nc > {output.pr2}
         else
@@ -185,15 +140,15 @@ rule split_pseudoreplicates_replicate:
         rm -f "$tmp_pr1" "$tmp_pr2"
         """
 
-# Rule 4: Call peaks on pseudo-replicate 1
-rule call_peaks_pr1_replicate:
+# Rule 3: Call peaks on pseudo-replicates (handles both pr1 and pr2)
+rule call_peaks_pseudoreplicate:
     input:
-        tagalign = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.pr1.tagAlign.gz"),
+        tagalign = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.{pr}.tagAlign.gz"),
     output:
-        narrowpeak = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.pr1.narrowPeak.gz"),
+        narrowpeak = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.{pr}.narrowPeak.gz"),
     params:
         out_dir = lambda w: os.path.join(result_path, "middle_files", "replicates", w.replicate),
-        prefix = lambda w: os.path.join(result_path, "middle_files", "replicates", w.replicate, w.replicate + ".pr1"),
+        prefix = lambda w: os.path.join(result_path, "middle_files", "replicates", w.replicate, f"{w.replicate}.{w.pr}"),
         genome_size = config["refs"]["genome_size_bp"],
         pval_thresh = config.get("replicates", {}).get("pval_thresh", 1e-3),
         smooth_win = config.get("replicates", {}).get("smooth_win", 150),
@@ -203,10 +158,12 @@ rule call_peaks_pr1_replicate:
         mem_mb = config["resources"].get("mem_mb", 16000),
         runtime = 600,
     threads: config["resources"].get("threads", 2)
+    wildcard_constraints:
+        pr="pr1|pr2|pooled"
     conda:
-        "../envs/macs2_homer.yaml"
+        "../envs/reproducibility.yaml"
     log:
-        "logs/rules/replicates/call_peaks_pr1_{replicate}.log"
+        "logs/rules/replicates/call_peaks_{replicate}_{pr}.log"
     shell:
         """
         shiftsize=$(echo "{params.smooth_win} / 2" | bc | awk '{{printf "%.0f", $1}}')
@@ -235,57 +192,7 @@ rule call_peaks_pr1_replicate:
         rm -f "$npeak_tmp" "$npeak_tmp2" "{params.prefix}"_*
         """
 
-# Rule 5: Call peaks on pseudo-replicate 2
-rule call_peaks_pr2_replicate:
-    input:
-        tagalign = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.pr2.tagAlign.gz"),
-    output:
-        narrowpeak = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.pr2.narrowPeak.gz"),
-    params:
-        out_dir = lambda w: os.path.join(result_path, "middle_files", "replicates", w.replicate),
-        prefix = lambda w: os.path.join(result_path, "middle_files", "replicates", w.replicate, w.replicate + ".pr2"),
-        genome_size = config["refs"]["genome_size_bp"],
-        pval_thresh = config.get("replicates", {}).get("pval_thresh", 1e-3),
-        smooth_win = config.get("replicates", {}).get("smooth_win", 150),
-        cap_num_peak = config.get("replicates", {}).get("cap_num_peak", 300000),
-        chrom_sizes = config["refs"]["chrom_sizes"],
-    resources:
-        mem_mb = config["resources"].get("mem_mb", 16000),
-        runtime = 600,
-    threads: config["resources"].get("threads", 2)
-    conda:
-        "../envs/macs2_homer.yaml"
-    log:
-        "logs/rules/replicates/call_peaks_pr2_{replicate}.log"
-    shell:
-        """
-        shiftsize=$(echo "{params.smooth_win} / 2" | bc | awk '{{printf "%.0f", $1}}')
-        shiftsize=$((shiftsize * -1))
-        
-        macs2 callpeak \
-            -t {input.tagalign} -f BED -n {params.prefix} -g {params.genome_size} \
-            -p {params.pval_thresh} --shift $shiftsize --extsize {params.smooth_win} \
-            --nomodel -B --SPMR --keep-dup all --call-summits \
-            --outdir {params.out_dir} 2>> {log}
-        
-        # Sort and cap peaks
-        npeak_tmp="{params.prefix}.tmp"
-        npeak_tmp2="{params.prefix}.tmp2"
-        
-        LC_COLLATE=C sort -k 8gr,8gr "{params.prefix}_peaks.narrowPeak" | \
-        awk 'BEGIN{{OFS="\\t"}}{{'
-            '$4="Peak_"NR; if ($2<0) $2=0; if ($3<0) $3=0; if ($10==-1) '
-            '$10=$2+int(($3-$2+1)/2.0); print $0}}' > "$npeak_tmp"
-        
-        head -n {params.cap_num_peak} "$npeak_tmp" > "$npeak_tmp2"
-        
-        # Clip peaks between 0-chromSize
-        bedClip "$npeak_tmp2" {params.chrom_sizes} stdout | gzip -nc > {output.narrowpeak}
-        
-        rm -f "$npeak_tmp" "$npeak_tmp2" "{params.prefix}"_*
-        """
-
-# Rule 6: Combine pseudo-replicate peaks using IDR or overlap
+# Rule 4: Combine pseudo-replicate peaks using IDR or overlap
 rule combine_pseudoreplicate_peaks:
     input:
         pr1_peaks = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.pr1.narrowPeak.gz"),
@@ -311,7 +218,7 @@ rule combine_pseudoreplicate_peaks:
         runtime = 600,
     threads: config["resources"].get("threads", 2)
     conda:
-        "../envs/macs2_homer.yaml"
+        "../envs/reproducibility.yaml"
     log:
         "logs/rules/replicates/combine_peaks_{replicate}.log"
     shell:
@@ -374,55 +281,5 @@ rule combine_pseudoreplicate_peaks:
             
             rm -f "$tmp1" "$tmp2" "$tmp_pooled"
         fi
-        """
-
-# Rule 7: Create pooled peaks for IDR (peak calling on full replicate)
-rule call_pooled_peaks_replicate:
-    input:
-        tagalign = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.tn5.tagAlign.gz"),
-    output:
-        pooled_peaks = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.pooled.narrowPeak.gz"),
-    params:
-        out_dir = lambda w: os.path.join(result_path, "middle_files", "replicates", w.replicate),
-        prefix = lambda w: os.path.join(result_path, "middle_files", "replicates", w.replicate, w.replicate + ".pooled"),
-        genome_size = config["refs"]["genome_size_bp"],
-        pval_thresh = config.get("replicates", {}).get("pval_thresh", 1e-3),
-        smooth_win = config.get("replicates", {}).get("smooth_win", 150),
-        cap_num_peak = config.get("replicates", {}).get("cap_num_peak", 300000),
-        chrom_sizes = config["refs"]["chrom_sizes"],
-    resources:
-        mem_mb = config["resources"].get("mem_mb", 16000),
-        runtime = 600,
-    threads: config["resources"].get("threads", 2)
-    conda:
-        "../envs/macs2_homer.yaml"
-    log:
-        "logs/rules/replicates/call_pooled_peaks_{replicate}.log"
-    shell:
-        """
-        shiftsize=$(echo "{params.smooth_win} / 2" | bc | awk '{{printf "%.0f", $1}}')
-        shiftsize=$((shiftsize * -1))
-        
-        macs2 callpeak \
-            -t {input.tagalign} -f BED -n {params.prefix} -g {params.genome_size} \
-            -p {params.pval_thresh} --shift $shiftsize --extsize {params.smooth_win} \
-            --nomodel -B --SPMR --keep-dup all --call-summits \
-            --outdir {params.out_dir} 2>> {log}
-        
-        # Sort and cap peaks
-        npeak_tmp="{params.prefix}.tmp"
-        npeak_tmp2="{params.prefix}.tmp2"
-        
-        LC_COLLATE=C sort -k 8gr,8gr "{params.prefix}_peaks.narrowPeak" | \
-        awk 'BEGIN{{OFS="\\t"}}{{'
-            '$4="Peak_"NR; if ($2<0) $2=0; if ($3<0) $3=0; if ($10==-1) '
-            '$10=$2+int(($3-$2+1)/2.0); print $0}}' > "$npeak_tmp"
-        
-        head -n {params.cap_num_peak} "$npeak_tmp" > "$npeak_tmp2"
-        
-        # Clip peaks between 0-chromSize
-        bedClip "$npeak_tmp2" {params.chrom_sizes} stdout | gzip -nc > {output.pooled_peaks}
-        
-        rm -f "$npeak_tmp" "$npeak_tmp2" "{params.prefix}"_*
         """
 

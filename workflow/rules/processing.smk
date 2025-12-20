@@ -465,18 +465,21 @@ rule samtools_process:
 # combining all runs in a single alignment step
         
 # Convert filtered BAM to BED to capture individual Tn5 insertion sites
+# Uses tagAlign conversion approach with proper paired-end handling and TN5 shift
 rule bam_to_bed:
     input:
         bam = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam"),
         bai = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam.bai"),
     output:
-        bed = os.path.join(result_path,"middle_files","bed","{sample}.insertion_sites.bed"),
+        bed = os.path.join(result_path,"middle_files","bed","{sample}.tagAlign.gz"),
     params:
         bed_dir = os.path.join(result_path,"middle_files","bed"),
+        is_paired = lambda w: samples[w.sample].get("read_type", "single") == "paired",
+        disable_tn5_shift = config.get("peaks", {}).get("disable_tn5_shift", False),
     resources:
         mem_mb = config["resources"].get("mem_mb", 16000),
-        runtime = 30,
-    threads: config["resources"].get("threads", 1)
+        runtime = 300,
+    threads: config["resources"].get("threads", 2)
     conda:
         "../envs/pybedtools.yaml",
     log:
@@ -486,13 +489,48 @@ rule bam_to_bed:
     shell:
         """
         mkdir -p {params.bed_dir}
-        bedtools bamtobed -i {input.bam} > {output.bed} 2> {log}
+        tmp_dir="{params.bed_dir}/tmp_{wildcards.sample}"
+        mkdir -p "$tmp_dir"
+        
+        if [ "{params.is_paired}" = "True" ]; then
+            # Paired-end: name sort BAM first
+            nmsrt_bam="$tmp_dir/{wildcards.sample}.nmsrt.bam"
+            samtools sort -n -o "$nmsrt_bam" -@ {threads} {input.bam}
+            
+            # Convert to BEDPE then to tagAlign
+            bedpe="$tmp_dir/{wildcards.sample}.bedpe.gz"
+            bedtools bamtobed -bedpe -mate1 -i "$nmsrt_bam" | gzip -nc > "$bedpe"
+            rm -f "$nmsrt_bam"
+            
+            # Convert BEDPE to tagAlign (two lines per pair)
+            zcat -f "$bedpe" | awk 'BEGIN{{OFS="\\t"}}'
+                '{{printf "%s\\t%s\\t%s\\tN\\t1000\\t%s\\n%s\\t%s\\t%s\\tN\\t1000\\t%s\\n",'
+                '$1,$2,$3,$9,$4,$5,$6,$10}}' | gzip -nc > "$tmp_dir/{wildcards.sample}.tagAlign.gz"
+            rm -f "$bedpe"
+        else
+            # Single-end: direct conversion
+            bedtools bamtobed -i {input.bam} | \
+            awk 'BEGIN{{OFS="\\t"}}{{$4="N";$5="1000";print $0}}' | gzip -nc > "$tmp_dir/{wildcards.sample}.tagAlign.gz"
+        fi
+        
+        # Apply TN5 shift if not disabled
+        if [ "{params.disable_tn5_shift}" = "True" ]; then
+            cp "$tmp_dir/{wildcards.sample}.tagAlign.gz" {output.bed}
+        else
+            cat "$tmp_dir/{wildcards.sample}.tagAlign" | awk 'BEGIN {{OFS = "\\t"}} {{
+                if ($6 == "+") {{$2 = $2 + 4}} else if ($6 == "-") {{$3 = $3 - 5}} 
+                if ($2 >= $3) {{ if ($6 == "+") {{$2 = $3 - 1}} else {{$3 = $2 + 1}} }} 
+                print $0}}' > {output.bed}
+        fi
+        
+        # Cleanup
+        rm -rf "$tmp_dir"
         """
 
 # Peak calling with MACS2
 rule peak_calling:
     input:
-        bed = os.path.join(result_path,"middle_files","bed","{sample}.insertion_sites.bed"),
+        bed = os.path.join(result_path,"middle_files","bed","{sample}.tagAlign.gz"),
     output:
         peak_calls = os.path.join(result_path,"important_processed","peaks","{sample}_peaks.narrowPeak"),
         macs2_xls = os.path.join(result_path,"important_processed","peaks","{sample}_peaks.xls"),

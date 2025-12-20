@@ -61,6 +61,7 @@ peaks:
   macs2_extsize: 150      # 2 * |macs2_shift|
   macs2_format: "BED"     # enforce BED input for ATAC
   macs2_pval: 1e-4
+  disable_tn5_shift: false
 
 # 5. Annotation (UROPA)
 annotation:
