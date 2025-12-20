@@ -473,6 +473,7 @@ rule bam_to_bed:
     output:
         bed = os.path.join(result_path,"middle_files","bed","{sample}.tagAlign.gz"),
     params:
+        script = os.path.join(workflow.basedir, "scripts", "bam_to_tagalign.sh"),
         bed_dir = os.path.join(result_path,"middle_files","bed"),
         is_paired = lambda w: samples[w.sample].get("read_type", "single") == "paired",
         disable_tn5_shift = config.get("peaks", {}).get("disable_tn5_shift", False),
@@ -488,43 +489,15 @@ rule bam_to_bed:
         sample="|".join(samples.keys())
     shell:
         """
-        mkdir -p {params.bed_dir}
-        tmp_dir="{params.bed_dir}/tmp_{wildcards.sample}"
-        mkdir -p "$tmp_dir"
-        
-        if [ "{params.is_paired}" = "True" ]; then
-            # Paired-end: name sort BAM first
-            nmsrt_bam="$tmp_dir/{wildcards.sample}.nmsrt.bam"
-            samtools sort -n -o "$nmsrt_bam" -@ {threads} {input.bam}
-            
-            # Convert to BEDPE then to tagAlign
-            bedpe="$tmp_dir/{wildcards.sample}.bedpe.gz"
-            bedtools bamtobed -bedpe -mate1 -i "$nmsrt_bam" | gzip -nc > "$bedpe"
-            rm -f "$nmsrt_bam"
-            
-            # Convert BEDPE to tagAlign (two lines per pair)
-            zcat -f "$bedpe" | awk 'BEGIN{{OFS="\\t"}}'
-                '{{printf "%s\\t%s\\t%s\\tN\\t1000\\t%s\\n%s\\t%s\\t%s\\tN\\t1000\\t%s\\n",'
-                '$1,$2,$3,$9,$4,$5,$6,$10}}' | gzip -nc > "$tmp_dir/{wildcards.sample}.tagAlign.gz"
-            rm -f "$bedpe"
-        else
-            # Single-end: direct conversion
-            bedtools bamtobed -i {input.bam} | \
-            awk 'BEGIN{{OFS="\\t"}}{{$4="N";$5="1000";print $0}}' | gzip -nc > "$tmp_dir/{wildcards.sample}.tagAlign.gz"
-        fi
-        
-        # Apply TN5 shift if not disabled
-        if [ "{params.disable_tn5_shift}" = "True" ]; then
-            cp "$tmp_dir/{wildcards.sample}.tagAlign.gz" {output.bed}
-        else
-            cat "$tmp_dir/{wildcards.sample}.tagAlign" | awk 'BEGIN {{OFS = "\\t"}} {{
-                if ($6 == "+") {{$2 = $2 + 4}} else if ($6 == "-") {{$3 = $3 - 5}} 
-                if ($2 >= $3) {{ if ($6 == "+") {{$2 = $3 - 1}} else {{$3 = $2 + 1}} }} 
-                print $0}}' > {output.bed}
-        fi
-        
-        # Cleanup
-        rm -rf "$tmp_dir"
+        {params.script} \\
+            {input.bam} \\
+            {output.bed} \\
+            {wildcards.sample} \\
+            {params.is_paired} \\
+            {params.disable_tn5_shift} \\
+            {threads} \\
+            {params.bed_dir} \\
+            {log}
         """
 
 # Peak calling with MACS2

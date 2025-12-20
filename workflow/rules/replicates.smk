@@ -94,49 +94,57 @@ rule split_pseudoreplicates_replicate:
     log:
         "logs/rules/replicates/split_pseudoreplicates_{replicate}.log"
     shell:
-        """
+        r"""
+        set -euo pipefail
+
         prefix="{params.out_dir}/{wildcards.replicate}"
         tmp_pr1="$prefix.00"
         tmp_pr2="$prefix.01"
-        
+
         # Determine random seed
         if [ "{params.random_seed}" = "0" ]; then
             random_seed=$(zcat -f {input.tagalign} | wc -c)
         else
             random_seed="{params.random_seed}"
         fi
-        
+
         if [ "{params.is_paired}" = "True" ]; then
             # Paired-end: keep pairs together
             nlines=$(zcat -f {input.tagalign} | wc -l)
             nlines=$((nlines / 2))
             nlines=$((nlines / 2 + 1))
-            
-            zcat -f {input.tagalign} | sed 'N;s/\\n/\\t/' | \
+
+            # Each pair = 2 lines. We'll glue them with sed, shuffle, split, and then unglue.
+            # Remove ERR trap to prevent SIGPIPE (exit 141) errors from causing hard failure:
+            set +e
+
+            zcat -f {input.tagalign} | sed 'N;s/\n/\t/' | \
             shuf --random-source=<(openssl enc -aes-256-ctr -pass pass:$random_seed -nosalt </dev/zero 2>/dev/null) | \
             split -d -l $nlines - "$prefix."
-            
-            # Restore paired-end format
-            cat "$tmp_pr1" | awk 'BEGIN{{OFS="\\t"}} '
-                '{{printf "%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n",'
-                '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12}}' | gzip -nc > {output.pr1}
-            
-            cat "$tmp_pr2" | awk 'BEGIN{{OFS="\\t"}} '
-                '{{printf "%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n",'
-                '$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12}}' | gzip -nc > {output.pr2}
+
+            set -e
+
+            # Restore paired-end format (convert each tabbed line back to 2 lines)
+            awk -F $'\t' 'NF==12{{printf "%s\t%s\t%s\t%s\t%s\t%s\n%s\t%s\t%s\t%s\t%s\t%s\n",$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12}}' "$tmp_pr1" | gzip -nc > {output.pr1}
+            awk -F $'\t' 'NF==12{{printf "%s\t%s\t%s\t%s\t%s\t%s\n%s\t%s\t%s\t%s\t%s\t%s\n",$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12}}' "$tmp_pr2" | gzip -nc > {output.pr2}
         else
             # Single-end
             nlines=$(zcat -f {input.tagalign} | wc -l)
             nlines=$((nlines / 2 + 1))
-            
+
+            # Remove ERR trap to prevent SIGPIPE (exit 141) errors from causing hard failure:
+            set +e
+
             zcat -f {input.tagalign} | \
             shuf --random-source=<(openssl enc -aes-256-ctr -pass pass:$random_seed -nosalt </dev/zero 2>/dev/null) | \
             split -d -l $nlines - "$prefix."
-            
+
+            set -e
+
             gzip -nc "$tmp_pr1" > {output.pr1}
             gzip -nc "$tmp_pr2" > {output.pr2}
         fi
-        
+
         rm -f "$tmp_pr1" "$tmp_pr2"
         """
 
@@ -165,8 +173,10 @@ rule call_peaks_pseudoreplicate:
     log:
         "logs/rules/replicates/call_peaks_{replicate}_{pr}.log"
     shell:
-        """
-        shiftsize=$(echo "{params.smooth_win} / 2" | bc | awk '{{printf "%.0f", $1}}')
+        r"""
+        set -euo pipefail
+
+        shiftsize=$(( {params.smooth_win}  / 2 ))
         shiftsize=$((shiftsize * -1))
         
         macs2 callpeak \
@@ -174,25 +184,23 @@ rule call_peaks_pseudoreplicate:
             -p {params.pval_thresh} --shift $shiftsize --extsize {params.smooth_win} \
             --nomodel -B --SPMR --keep-dup all --call-summits \
             --outdir {params.out_dir} 2>> {log}
-        
+
         # Sort and cap peaks
         npeak_tmp="{params.prefix}.tmp"
         npeak_tmp2="{params.prefix}.tmp2"
-        
+
         LC_COLLATE=C sort -k 8gr,8gr "{params.prefix}_peaks.narrowPeak" | \
-        awk 'BEGIN{{OFS="\\t"}}{{'
-            '$4="Peak_"NR; if ($2<0) $2=0; if ($3<0) $3=0; if ($10==-1) '
-            '$10=$2+int(($3-$2+1)/2.0); print $0}}' > "$npeak_tmp"
-        
+        awk 'BEGIN{{OFS="\t"}} {{$4="Peak_"NR}} ($2<0){{$2=0}} ($3<0){{$3=0}} ($10==-1){{$10=int($2+($3-$2+1)/2.0)}} {{print $0}}' > "$npeak_tmp"
+
         head -n {params.cap_num_peak} "$npeak_tmp" > "$npeak_tmp2"
-        
+
         # Clip peaks between 0-chromSize
         bedClip "$npeak_tmp2" {params.chrom_sizes} stdout | gzip -nc > {output.narrowpeak}
-        
+
         rm -f "$npeak_tmp" "$npeak_tmp2" "{params.prefix}"_*
         """
 
-# Rule 4: Combine pseudo-replicate peaks using IDR or overlap
+# Rule 4: Combine pseudo-replicate peaks using IDR or naive overlap
 rule combine_pseudoreplicate_peaks:
     input:
         pr1_peaks = os.path.join(result_path, "middle_files", "replicates", "{replicate}", "{replicate}.pr1.narrowPeak.gz"),
@@ -211,7 +219,6 @@ rule combine_pseudoreplicate_peaks:
         nonamecheck = lambda w: "-nonamecheck" if config.get("replicates", {}).get("nonamecheck", False) else "",
         chrom_sizes = config["refs"]["chrom_sizes"],
         blacklist = config.get("refs", {}).get("blacklist", ""),
-        # Convert IDR rank to column number
         idr_rank_col = lambda w: "8" if config.get("replicates", {}).get("idr_rank", "signal.value") == "signal.value" else "9",
     resources:
         mem_mb = config["resources"].get("mem_mb", 32000),
@@ -222,64 +229,66 @@ rule combine_pseudoreplicate_peaks:
     log:
         "logs/rules/replicates/combine_peaks_{replicate}.log"
     shell:
-        """
+        r"""
         mkdir -p {params.out_dir}
         method="{params.method}"
-        
+
         if [ "$method" = "idr" ]; then
             # Use IDR to combine peaks
             idr_out="{params.out_dir}/{params.prefix}.idr{params.idr_thresh}.unthresholded-peaks.txt"
             idr_tmp="{params.out_dir}/{params.prefix}.idr{params.idr_thresh}.unthresholded-peaks.txt.tmp"
             idr_12col="{params.out_dir}/{params.prefix}.idr{params.idr_thresh}.narrowPeak.12-col.bed.gz"
-            
+
             idr --samples {input.pr1_peaks} {input.pr2_peaks} --peak-list {input.pooled_peaks} \
                 --input-file-type narrowPeak --output-file "$idr_out" \
                 --rank {params.idr_rank} --soft-idr-threshold {params.idr_thresh} \
                 --plot --use-best-multisummit-IDR --log-output-file {log} 2>&1
-            
+
             # Clip peaks
             bedClip "$idr_out" {params.chrom_sizes} stdout > "$idr_tmp"
-            
-            # Filter by IDR threshold and convert to narrowPeak format
-            neg_log10_thresh=$(echo "-l({params.idr_thresh})/l(10)" | bc -l | awk '{{printf "%.6f", $1}}')
+
+            # Filter by IDR threshold and convert to narrowPeak format.
+            # Use column 12 ("$12") for IDR score (neglog10 IDR score)
+            neg_log10_thresh=$(python3 -c 'import math; print(format(-math.log10(float("{params.idr_thresh}")), ".6f"))')
+
             rank_col={params.idr_rank_col}
-            
-            awk -v thresh="$neg_log10_thresh" 'BEGIN{{OFS="\\t"}} $12>=thresh {{
-                if ($2<0) $2=0; 
-                print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12}}' "$idr_tmp" | \
+
+            awk -v thresh="$neg_log10_thresh" 'BEGIN{{OFS="\t"}} $12>=thresh {{
+                if ($2<0) $2=0;
+                print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
+            }}' "$idr_tmp" | \
             sort -k1,1 -k2,2n | uniq | \
-            sort -grk$rank_col,$rank_col | \
-            awk 'BEGIN{{OFS="\\t"}}{{print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10}}' | \
+            sort -grk"$rank_col","$rank_col" | \
+            awk 'BEGIN{{OFS="\t"}}{{print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10}}' | \
             gzip -nc > {output.combined_peaks}
-            
+
             rm -f "$idr_out" "$idr_tmp" "$idr_12col" "{params.out_dir}/{params.prefix}"*.png
         else
             # Use naive overlap to combine peaks
             tmp1="{params.out_dir}/{params.prefix}.tmp1.narrowPeak"
             tmp2="{params.out_dir}/{params.prefix}.tmp2.narrowPeak"
             tmp_pooled="{params.out_dir}/{params.prefix}.tmp_pooled.narrowPeak"
-            
+
             zcat -f {input.pr1_peaks} > "$tmp1"
             zcat -f {input.pr2_peaks} > "$tmp2"
             zcat -f {input.pooled_peaks} > "$tmp_pooled"
-            
+
             # Find overlapping peaks (>=50% overlap)
             # First intersection: pooled vs pr1
             intersectBed {params.nonamecheck} -wo -a "$tmp_pooled" -b "$tmp1" | \
-            awk 'BEGIN{{FS="\\t";OFS="\\t"}} {{
-                s1=$3-$2; s2=$13-$12; 
+            awk 'BEGIN{{FS="\t";OFS="\t"}} {{
+                s1=$3-$2; s2=$13-$12;
                 if (($21/s1 >= 0.5) || ($21/s2 >= 0.5)) {{print $0}}
             }}' | \
             cut -f 1-10 | sort -k1,1 -k2,2n | uniq | \
             # Second intersection: result vs pr2
             intersectBed {params.nonamecheck} -wo -a stdin -b "$tmp2" | \
-            awk 'BEGIN{{FS="\\t";OFS="\\t"}} {{
-                s1=$3-$2; s2=$13-$12; 
+            awk 'BEGIN{{FS="\t";OFS="\t"}} {{
+                s1=$3-$2; s2=$13-$12;
                 if (($21/s1 >= 0.5) || ($21/s2 >= 0.5)) {{print $0}}
             }}' | \
             cut -f 1-10 | sort -k1,1 -k2,2n | uniq | gzip -nc > {output.combined_peaks}
-            
+
             rm -f "$tmp1" "$tmp2" "$tmp_pooled"
         fi
         """
-

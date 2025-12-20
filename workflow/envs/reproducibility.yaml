@@ -5,6 +5,7 @@ channels:
   - defaults
 dependencies:
   - python=3.8  # IDR is Python-based; older versions are often more stable for IDR
+  - numpy<1.24
   - idr         # The IDR tool
   - bedtools    # Contains intersectBed
   - ucsc-bedclip # Contains bedClip
