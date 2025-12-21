@@ -32,7 +32,7 @@ class MultiqcModule(BaseMultiqcModule):
 
         # Initialise the parent object
         super(MultiqcModule, self).__init__(name='The ATAC-seq Pipeline', anchor='atacseq',
-                                            href='https://github.com/epigen/atacseq_pipeline',
+                                            href='https://github.com/regulatory-genomics/ATAC-sm',
                                             info="processes, quantifies and annotates ATAC-seq data.")
         log.info('Initialized atacseq module')
         
@@ -177,6 +177,13 @@ class MultiqcModule(BaseMultiqcModule):
         # Get the genome version
         self.genome_version = config.genome
 
+        # Parse reproducibility and BAM correlation stats
+        self.reproducibility_stats = self.parse_reproducibility_stats()
+        self.bam_correlation_stats = self.parse_bam_correlation_stats()
+        
+        # Map replicate groups to samples for general stats
+        self.replicate_group_to_samples = self.build_replicate_group_mapping()
+
         # Add stats to general table
         self.add_atacseq_to_general_stats()
 
@@ -251,6 +258,137 @@ class MultiqcModule(BaseMultiqcModule):
                         pass
                     break
         return data
+
+    def parse_reproducibility_stats(self):
+        """
+        Parse reproducibility QC stats TSV file.
+        Format: Sample\tReproducibility\tN_Optimal_Peaks\tRescue_Ratio\tSelf_Consistency_Ratio
+        """
+        stats = {}
+        try:
+            import glob
+            # Search in common report directory locations
+            search_paths = []
+            
+            # Try config.data_dir first
+            if hasattr(config, 'data_dir') and config.data_dir:
+                search_paths.append(config.data_dir)
+            
+            # Try report directory relative to data_dir
+            if hasattr(config, 'data_dir') and config.data_dir:
+                report_dir = os.path.join(config.data_dir, 'report')
+                if os.path.exists(report_dir):
+                    search_paths.append(report_dir)
+            
+            # Try current working directory
+            search_paths.append(os.getcwd())
+            
+            # Search for the file
+            for base_dir in search_paths:
+                pattern = os.path.join(base_dir, '**', 'reproducibility_stats_mqc.tsv')
+                files = glob.glob(pattern, recursive=True)
+                if files:
+                    filepath = files[0]  # Use first match
+                    log.info('Found reproducibility stats file: {}'.format(filepath))
+                    with open(filepath, 'r') as f:
+                        lines = f.readlines()
+                        if len(lines) < 2:
+                            continue
+                        # Skip header
+                        for line in lines[1:]:
+                            parts = line.strip().split('\t')
+                            if len(parts) >= 5:
+                                group = parts[0]
+                                reproducibility = parts[1]
+                                n_optimal = parts[2] if parts[2] != 'N/A' else None
+                                rescue_ratio = parts[3] if parts[3] != 'N/A' else None
+                                self_consistency_ratio = parts[4] if parts[4] != 'N/A' else None
+                                
+                                stats[group] = {
+                                    'reproducibility': reproducibility,
+                                    'n_optimal_peaks': int(n_optimal) if n_optimal and n_optimal.replace('.', '').isdigit() else None,
+                                    'rescue_ratio': float(rescue_ratio) if rescue_ratio and rescue_ratio != 'N/A' else None,
+                                    'self_consistency_ratio': float(self_consistency_ratio) if self_consistency_ratio and self_consistency_ratio != 'N/A' else None,
+                                }
+                    break
+        except Exception as e:
+            log.warning('Could not parse reproducibility stats: {}'.format(str(e)))
+        return stats
+
+    def parse_bam_correlation_stats(self):
+        """
+        Parse BAM correlation stats TSV file.
+        Format: Sample\tBAM_Correlation\tCorrelation_Quality\tN_Replicates
+        """
+        stats = {}
+        try:
+            import glob
+            # Search in common report directory locations
+            search_paths = []
+            
+            # Try config.data_dir first
+            if hasattr(config, 'data_dir') and config.data_dir:
+                search_paths.append(config.data_dir)
+            
+            # Try report directory relative to data_dir
+            if hasattr(config, 'data_dir') and config.data_dir:
+                report_dir = os.path.join(config.data_dir, 'report')
+                if os.path.exists(report_dir):
+                    search_paths.append(report_dir)
+            
+            # Try current working directory
+            search_paths.append(os.getcwd())
+            
+            # Search for the file
+            for base_dir in search_paths:
+                pattern = os.path.join(base_dir, '**', 'bam_correlation_stats_mqc.tsv')
+                files = glob.glob(pattern, recursive=True)
+                if files:
+                    filepath = files[0]  # Use first match
+                    log.info('Found BAM correlation stats file: {}'.format(filepath))
+                    with open(filepath, 'r') as f:
+                        lines = f.readlines()
+                        if len(lines) < 2:
+                            continue
+                        # Skip header
+                        for line in lines[1:]:
+                            parts = line.strip().split('\t')
+                            if len(parts) >= 4:
+                                group = parts[0]
+                                bam_correlation = parts[1] if parts[1] != 'N/A' else None
+                                quality = parts[2]
+                                n_replicates = parts[3] if parts[3].isdigit() else None
+                                
+                                stats[group] = {
+                                    'bam_correlation': float(bam_correlation) if bam_correlation and bam_correlation != 'N/A' else None,
+                                    'quality': quality,
+                                    'n_replicates': int(n_replicates) if n_replicates else None,
+                                }
+                    break
+        except Exception as e:
+            log.warning('Could not parse BAM correlation stats: {}'.format(str(e)))
+        return stats
+
+    def build_replicate_group_mapping(self):
+        """
+        Build a mapping from replicate group names to individual sample names.
+        Uses the annotation file to determine which samples belong to which replicate group.
+        """
+        mapping = {}
+        try:
+            sample_annotation_path = config.annotation
+            with open(sample_annotation_path, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    sample_name = row.get('sample_name', '').strip()
+                    replicate_group = row.get('replicate_sample_name', '').strip()
+                    if sample_name and replicate_group:
+                        if replicate_group not in mapping:
+                            mapping[replicate_group] = []
+                        mapping[replicate_group].append(sample_name)
+        except Exception as e:
+            log.warning('Could not build replicate group mapping: {}'.format(str(e)))
+        return mapping
 
     def add_atacseq_to_general_stats(self):
         data = {}
@@ -333,6 +471,28 @@ class MultiqcModule(BaseMultiqcModule):
                 except:
                     value = None
                 data[sample_name]['percent_filtered'] = value
+            
+            # Add reproducibility metrics if this sample belongs to a replicate group
+            for group_name, samples_in_group in self.replicate_group_to_samples.items():
+                if sample_name in samples_in_group:
+                    # Add reproducibility stats
+                    if group_name in self.reproducibility_stats:
+                        rep_stats = self.reproducibility_stats[group_name]
+                        if rep_stats.get('rescue_ratio') is not None:
+                            data[sample_name]['rescue_ratio'] = rep_stats['rescue_ratio']
+                        if rep_stats.get('self_consistency_ratio') is not None:
+                            data[sample_name]['self_consistency_ratio'] = rep_stats['self_consistency_ratio']
+                        if rep_stats.get('n_optimal_peaks') is not None:
+                            data[sample_name]['n_optimal_peaks'] = rep_stats['n_optimal_peaks']
+                        data[sample_name]['reproducibility_status'] = rep_stats.get('reproducibility', 'unknown')
+                    
+                    # Add BAM correlation stats
+                    if group_name in self.bam_correlation_stats:
+                        bam_stats = self.bam_correlation_stats[group_name]
+                        if bam_stats.get('bam_correlation') is not None:
+                            data[sample_name]['bam_correlation'] = bam_stats['bam_correlation']
+                    break  # Sample can only belong to one group
+        
         headers = OrderedDict()
         if hasattr(config, 'exploratory_columns'):
             for column in config.exploratory_columns:
@@ -473,6 +633,49 @@ class MultiqcModule(BaseMultiqcModule):
             'min': 0.0,
             'max': 1.0,
             'format': '{:.2f}'
+        })
+        
+        # Reproducibility metrics (for replicate groups)
+        add_header_if_visible('rescue_ratio', {
+            'description': 'Rescue Ratio: max(Np, Nt) / min(Np, Nt). Should be ≤2.0 (ENCODE standard)',
+            'title': 'Rescue\nRatio',
+            'scale': 'RdYlGn',
+            'min': 1.0,
+            'max': 5.0,
+            'format': '{:.3f}'
+        })
+        
+        add_header_if_visible('self_consistency_ratio', {
+            'description': 'Self-Consistency Ratio: max(N1, N2) / min(N1, N2). Should be ≤2.0 (ENCODE standard)',
+            'title': 'Self-Consist.\nRatio',
+            'scale': 'RdYlGn',
+            'min': 1.0,
+            'max': 5.0,
+            'format': '{:.3f}'
+        })
+        
+        add_header_if_visible('n_optimal_peaks', {
+            'description': 'Number of peaks in optimal set (selected based on reproducibility)',
+            'title': 'Optimal\nPeaks',
+            'scale': 'Greens',
+            'format': '{:,.0f}'
+        })
+        
+        add_header_if_visible('reproducibility_status', {
+            'description': 'Reproducibility status: pass/borderline/fail (ENCODE standard)',
+            'title': 'Reproducibility',
+            'scale': False,
+            'format': '{:s}'
+        })
+        
+        # BAM correlation metrics (for replicate groups)
+        add_header_if_visible('bam_correlation', {
+            'description': 'Mean Spearman correlation between BAM files (off-diagonal mean). Higher is better.',
+            'title': 'BAM\nCorrelation',
+            'scale': 'RdYlGn',
+            'min': 0.0,
+            'max': 1.0,
+            'format': '{:.4f}'
         })
         
         self.general_stats_addcols(data, headers)

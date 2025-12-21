@@ -13,3 +13,4 @@ dependencies:
   - gawk        # GNU awk (standard on Linux, but good to specify)
   - coreutils   # Standard tools like sort, cut, uniq
   - macs2
+  - pyyaml

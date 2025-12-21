@@ -416,8 +416,8 @@ rule idr_pooled_pseudoreplicates:
 # Rule 7: IDR between pairs of true replicates
 rule idr_true_replicates:
     input:
-        rep1_peaks = lambda w: os.path.join(result_path, "middle_files", "replicates", w.rep1, f"{w.rep1}.narrowPeak.gz"),
-        rep2_peaks = lambda w: os.path.join(result_path, "middle_files", "replicates", w.rep2, f"{w.rep2}.narrowPeak.gz"),
+        pr1_peaks = lambda w: os.path.join(result_path, "middle_files", "replicates", w.rep1, f"{w.rep1}.narrowPeak.gz"),
+        pr2_peaks = lambda w: os.path.join(result_path, "middle_files", "replicates", w.rep2, f"{w.rep2}.narrowPeak.gz"),
         pooled_peaks = lambda w: os.path.join(result_path, "middle_files", "replicates", "groups", w.group, f"{w.group}.pooled-all.narrowPeak.gz"),
     output:
         idr_peak = os.path.join(result_path, "middle_files", "replicates", "groups", "{group}", "true_replicates", "{rep1}_vs_{rep2}.idr.narrowPeak.gz"),
