@@ -142,3 +142,5 @@ dmypy.json
 snakejob_conductor.sh
 config/anno*
 *sample.csv
+
+workflow/docs/

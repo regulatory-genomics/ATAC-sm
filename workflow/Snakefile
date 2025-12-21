@@ -184,6 +184,15 @@ rule all:
             os.path.join(result_path, "important_processed", "replicates", "{replicate}-pr1_vs_{replicate}-pr2.narrowPeak.gz"),
             replicate=replicate_samples
         ) if len(replicate_samples) > 0 else [],
+        # REPRODUCIBILITY QC AND OPTIMAL PEAKS (for replicate groups)
+        reproducibility_qc = expand(
+            os.path.join(result_path, "important_processed", "replicates", "groups", "{group}", "{group}.reproducibility.qc.json"),
+            group=replicate_samples
+        ) if len(replicate_samples) > 0 else [],
+        optimal_peaks = expand(
+            os.path.join(result_path, "important_processed", "replicates", "groups", "{group}", "{group}.optimal_peak.narrowPeak.gz"),
+            group=replicate_samples
+        ) if len(replicate_samples) > 0 else [],
         merged_peaks = os.path.join(result_path,"downstream_res","merged_peaks","merged_peaks.bed"),
         tracks_out = expand(os.path.join(result_path, "important_processed", "tracks", "{sample}.bw"), sample=list(samples.keys())),
     resources:
