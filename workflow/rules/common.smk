@@ -95,3 +95,136 @@ def get_quantifications(wildcards):
     else:
         raise ValueError(f"Unsupported quantification kind '{wildcards.kind}'. Expected one of support, consensus, promoter, TSS.")
     return paths
+
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+# Helper function to get replicate sample names from annotation
+# Uses replicate_sample_name column to group biological replicates
+def get_replicate_names():
+    """Get list of replicate group names from sample annotation"""
+    if 'replicate_sample_name' not in annot.columns:
+        return []
+    # Get unique replicate_sample_name values that have >1 sample
+    all_replicate_names = annot['replicate_sample_name'].dropna().astype(str).unique().tolist()
+    # Only keep replicate names with >1 associated sample
+    replicate_names = [rep for rep in all_replicate_names if len(get_reproducibility_sample(rep)) > 1]
+    return replicate_names
+
+# Get sample names for a replicate group
+def get_samples_for_replicate(replicate_name):
+    """Get list of sample names belonging to a replicate group"""
+    return get_reproducibility_sample(replicate_name)
+
+# Get BAM files for all samples in a replicate group
+def get_replicate_bams(replicate_name):
+    """Get BAM file paths for all samples in a replicate group"""
+    sample_names = get_samples_for_replicate(replicate_name)
+    return [os.path.join(result_path, "important_processed", "bam", f"{sample}.filtered.bam") for sample in sample_names]
+
+# Get tagAlign files for all samples in a replicate group
+def get_replicate_tagaligns(replicate_name):
+    """Get tagAlign file paths for all samples in a replicate group"""
+    sample_names = get_samples_for_replicate(replicate_name)
+    return [os.path.join(result_path, "middle_files", "bed", f"{sample}.tagAlign.gz") for sample in sample_names]
+
+# Helper function to get all combined pseudo-replicate peak files
+# Returns list of peak files: [rep1-pr1_vs_rep1-pr2.narrowPeak.gz, rep2-pr1_vs_rep2-pr2.narrowPeak.gz, ...]
+def get_all_replicate_peaks_pr():
+    """Get list of all combined pseudo-replicate peak files for downstream analysis"""
+    replicate_names = get_replicate_names()
+    # Get all samples in all replicate groups
+    all_samples = []
+    for rep in replicate_names:
+        all_samples.extend(get_reproducibility_sample(rep))
+    return [
+        os.path.join(result_path, "middle_files", "replicates", sample, f"{sample}-pr1_vs_{sample}-pr2.narrowPeak.gz")
+        for sample in all_samples
+    ]
+
+# Get all replicate group IDs (unique groups, not individual replicates)
+def get_replicate_group_ids():
+    """Get unique replicate group identifiers"""
+    if 'replicate_sample_name' not in annot.columns:
+        return []
+    # Get unique group names where each group has >1 sample
+    group_names = []
+    for group in annot['replicate_sample_name'].dropna().astype(str).unique():
+        samples_in_group = get_reproducibility_sample(group)
+        if len(samples_in_group) > 1:
+            group_names.append(group)
+    return group_names
+
+# Get all pairs of replicates within a group for pairwise comparisons
+def get_replicate_pairs(group_id):
+    """Get all pairs (i,j) where i<j within a replicate group"""
+    samples_in_group = get_reproducibility_sample(group_id)
+    pairs = []
+    for i in range(len(samples_in_group)):
+        for j in range(i+1, len(samples_in_group)):
+            pairs.append((samples_in_group[i], samples_in_group[j]))
+    return pairs
+
+# Get all pr1 tagAlign files for a group
+def get_group_pr1_tagaligns(group_id):
+    """Get all pr1 tagAlign files for replicates in a group"""
+    samples_in_group = get_reproducibility_sample(group_id)
+    return [
+        os.path.join(result_path, "middle_files", "replicates", sample, f"{sample}.pr1.tagAlign.gz")
+        for sample in samples_in_group
+    ]
+
+# Get all pr2 tagAlign files for a group
+def get_group_pr2_tagaligns(group_id):
+    """Get all pr2 tagAlign files for replicates in a group"""
+    samples_in_group = get_reproducibility_sample(group_id)
+    return [
+        os.path.join(result_path, "middle_files", "replicates", sample, f"{sample}.pr2.tagAlign.gz")
+        for sample in samples_in_group
+    ]
+
+# Determine if paired-end based on first sample in replicate group
+def is_paired_end(replicate_name):
+    """Check if replicate is paired-end (based on first sample)"""
+    sample_names = get_samples_for_replicate(replicate_name)
+    if not sample_names:
+        return False
+    # Use first sample's read_type
+    first_sample = sample_names[0]
+    return samples[first_sample].get("read_type", "single") == "paired"
+
+# Validation function to check if replicate name is valid
+def validate_replicate_name(wildcards):
+    """Validate that the replicate wildcard corresponds to a valid replicate group"""
+    valid_replicates = get_replicate_names()
+    if wildcards.replicate not in valid_replicates:
+        # Get all sample names for better error message
+        all_sample_names = list(samples.keys())
+        
+        # Check if user mistakenly used a sample_name instead of replicate_sample_name
+        if wildcards.replicate in all_sample_names:
+            # Find the correct replicate group for this sample
+            if 'replicate_sample_name' in annot.columns:
+                sample_row = annot[annot['sample_name'] == wildcards.replicate]
+                if not sample_row.empty:
+                    correct_replicate = sample_row['replicate_sample_name'].iloc[0]
+                    raise ValueError(
+                        f"ERROR: '{wildcards.replicate}' is a SAMPLE name, not a replicate GROUP name!\n"
+                        f"  Sample '{wildcards.replicate}' belongs to replicate group: '{correct_replicate}'\n"
+                        f"  Use replicate='{correct_replicate}' instead.\n\n"
+                        f"Valid replicate groups (from 'replicate_sample_name' column): {valid_replicates}\n"
+                        f"  Each group contains multiple samples for reproducibility analysis."
+                    )
+        
+        raise ValueError(
+            f"ERROR: Invalid replicate name '{wildcards.replicate}'!\n"
+            f"Valid replicate groups: {valid_replicates}\n"
+            f"  These are values from the 'replicate_sample_name' column with >1 sample.\n"
+            f"  If you see an empty list, check that:\n"
+            f"    1. Your annotation has a 'replicate_sample_name' column\n"
+            f"    2. At least one replicate group has >1 sample (needed for reproducibility analysis)"
+        )
+    return []

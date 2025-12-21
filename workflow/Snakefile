@@ -180,17 +180,15 @@ rule all:
             sample_rep=replicate_samples
         ) if len(replicate_samples) > 0 else [],
         # REPLICATE PSEUDO-REPLICATE PEAKS (IDR/overlap), only if replicate_sample_name is defined
-        replicate_peaks_pr = expand(
-            os.path.join(result_path, "important_processed", "replicates", "{replicate}-pr1_vs_{replicate}-pr2.narrowPeak.gz"),
-            replicate=replicate_samples
-        ) if len(replicate_samples) > 0 else [],
+        # Get all samples from all replicate groups
+        replicate_peaks_pr = get_all_replicate_peaks_pr() if len(replicate_samples) > 0 else [],
         # REPRODUCIBILITY QC AND OPTIMAL PEAKS (for replicate groups)
         reproducibility_qc = expand(
-            os.path.join(result_path, "important_processed", "replicates", "groups", "{group}", "{group}.reproducibility.qc.json"),
+            os.path.join(result_path, "report", "reproducibility", "{group}.reproducibility.qc.json"),
             group=replicate_samples
         ) if len(replicate_samples) > 0 else [],
         optimal_peaks = expand(
-            os.path.join(result_path, "important_processed", "replicates", "groups", "{group}", "{group}.optimal_peak.narrowPeak.gz"),
+            os.path.join(result_path, "middle_files", "replicates", "groups", "{group}", "{group}.optimal_peak.narrowPeak.gz"),
             group=replicate_samples
         ) if len(replicate_samples) > 0 else [],
         merged_peaks = os.path.join(result_path,"downstream_res","merged_peaks","merged_peaks.bed"),
