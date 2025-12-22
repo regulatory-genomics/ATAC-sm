@@ -24,7 +24,7 @@ report: os.path.join("report", "workflow.rst")
 envs = ["macs2_homer","multiqc","pybedtools","uropa","ggplot","ataqv"]
 
 # load config and sample annotation sheets #####
-configfile: os.path.join("config","config_test.yaml")
+configfile: os.path.join("config","config.yaml")
 validate(config, schema="../schemas/config.schema.yml")
 
 

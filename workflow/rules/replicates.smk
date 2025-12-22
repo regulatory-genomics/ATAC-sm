@@ -51,7 +51,7 @@ rule split_pseudoreplicates_replicate:
         is_paired = lambda w: samples[w.replicate].get("read_type", "single") == "paired" if w.replicate in samples else False,
         random_seed = config.get("replicates", {}).get("pseudoreplication_random_seed", 0),
     resources:
-        mem_mb = config["resources"].get("mem_mb", 16000),
+        mem_mb = 4*config["resources"].get("mem_mb", 16000),
         runtime = 300,
     threads: 1
     wildcard_constraints:
@@ -369,7 +369,7 @@ rule call_peaks_pooled_all:
         chrom_sizes = CHROM_SIZES,
         shiftsize = SHIFT_SIZE,
     resources:
-        mem_mb = MEM_MB_DEFAULT,
+        mem_mb = 4*MEM_MB_DEFAULT,
         runtime = 600,
     threads: THREADS_DEFAULT
     conda:

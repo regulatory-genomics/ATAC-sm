@@ -177,11 +177,11 @@ def get_correlation_quality(mean_corr):
     """Determine quality level based on correlation value"""
     if mean_corr is None:
         return 'unknown'
-    elif mean_corr >= 0.95:
-        return 'excellent'
     elif mean_corr >= 0.90:
-        return 'good'
+        return 'excellent'
     elif mean_corr >= 0.80:
+        return 'good'
+    elif mean_corr >= 0.50:
         return 'acceptable'
     else:
         return 'poor'

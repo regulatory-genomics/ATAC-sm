@@ -9,5 +9,5 @@ default-resources:
   slurm_qos: "huge"
   qos: "huge"
   runtime: 60                 # Default time in minutes (1 hour)
-  mem_mb: 4000                # Default memory (4GB)
+  mem_mb: 8000                # Default memory (4GB)
   slurm_account: "zhangkai" # Optional: if your cluster requires account tracking

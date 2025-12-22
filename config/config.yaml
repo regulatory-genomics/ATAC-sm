@@ -63,6 +63,23 @@ peaks:
   macs2_pval: 1e-4
   disable_tn5_shift: false
 
+
+replicates:
+  # Peak calling parameters (consistent with main peak calling)
+  pval_thresh: 1e-3                    # MACS2 p-value threshold
+  smooth_win: 150                       # Smoothing window for peak calling
+  cap_num_peak: 300000                  # Maximum number of peaks to report
+  
+  # Pseudo-replicate splitting
+  pseudoreplication_random_seed: 0      # 0 = auto-seed from file size
+  
+  # Peak combination method
+  peak_combination_method: "idr"        # "idr" or "overlap"
+  idr_thresh: 0.05                      # IDR threshold (0.05 recommended)
+  idr_rank: "signal.value"             # Ranking method: "signal.value" or "p.value"
+  
+  # Overlap method parameters (if using "overlap")
+  nonamecheck: false                    # Disable chromosome name checking
 # 5. Annotation (UROPA)
 annotation:
   tss_size: 100

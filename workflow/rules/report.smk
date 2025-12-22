@@ -11,7 +11,7 @@ has_prealignments = prealign_enabled and len(prealignments) > 0
 rule collect_align_stats:
     input:
         expand(os.path.join(result_path, "report", "align_stats", '{sample}.align.stats.tsv'), 
-               sample=samples.keys())
+                sample=samples.keys())
     output:
         report_tsv = os.path.join(result_path, 'report', 'align_stats_report.tsv')
     resources:
@@ -160,7 +160,8 @@ rule bam_correlation_to_multiqc:
         "logs/rules/bam_correlation_to_multiqc.log"
     shell:
         """
-        if [ {input.matrix_files} ]; then
+        # If there are any matrix files, run the conversion script
+        if [ -n "{input.matrix_files}" ]; then
             python workflow/scripts/bam_correlation_to_multiqc.py \
                 {input.matrix_files} \
                 --output-yaml {output.multiqc_yaml} \
@@ -191,7 +192,8 @@ rule reproducibility_to_multiqc:
         "logs/rules/reproducibility_to_multiqc.log"
     shell:
         """
-        if [ {input.json_files} ]; then
+        # If there are any reproducibility JSONs, run the conversion script
+        if [ -n "{input.json_files}" ]; then
             python workflow/scripts/reproducibility_to_multiqc.py \
                 {input.json_files} \
                 --output-yaml {output.multiqc_yaml} \
