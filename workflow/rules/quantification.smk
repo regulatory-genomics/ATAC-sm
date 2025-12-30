@@ -64,8 +64,12 @@ rule quantify_support_sample:
 # quantify coverage based on consensus regions counts for every sample
 rule quantify_counts_sample:
     input:
-        regions = os.path.join(result_path,"downstream_res","annotation","{kind}_regions.bed"),
-        bamfile = os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam"),
+        regions = lambda w: (
+            os.path.join(result_path, "downstream_res", "merged_peaks", "merged_peaks.bed")
+            if w.kind == "consensus"
+            else os.path.join(result_path, "downstream_res", "annotation", f"{w.kind}_regions.bed")
+        ),
+        bamfile = os.path.join(result_path, "important_processed", "bam", "{sample}.filtered.bam"),
         chromosome_sizes = config["refs"]["chrom_sizes"],
     output:
         quant_counts = os.path.join(result_path,"downstream_res","quantification","{sample}_quantification_{kind}_counts.csv"),

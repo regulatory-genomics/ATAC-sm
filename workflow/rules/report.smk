@@ -144,37 +144,6 @@ rule generate_multiqc_sample_names:
             for original_name, new_name in sorted(name_mapping.items()):
                 f.write(f"{original_name}\t{new_name}\n")
 
-# Rule to convert BAM correlation matrices to MultiQC custom content
-rule bam_correlation_to_multiqc:
-    input:
-        matrix_files = expand(
-            os.path.join(result_path, "report", "bamReproducibility", "{group}_global_rep_cor.txt"),
-            group=replicate_samples
-        ) if len(replicate_samples) > 0 else [],
-    output:
-        multiqc_yaml = os.path.join(result_path, "report", "bamReproducibility", "bam_correlation_mqc.yaml"),
-        stats_tsv = os.path.join(result_path, "report", "bamReproducibility", "bam_correlation_stats_mqc.tsv"),
-    conda:
-        "../envs/reproducibility.yaml"
-    log:
-        "logs/rules/bam_correlation_to_multiqc.log"
-    shell:
-        """
-        # If there are any matrix files, run the conversion script
-        if [ -n "{input.matrix_files}" ]; then
-            python workflow/scripts/bam_correlation_to_multiqc.py \
-                {input.matrix_files} \
-                --output-yaml {output.multiqc_yaml} \
-                --output-stats {output.stats_tsv} \
-                2>> {log}
-        else
-            # Create empty files if no replicate groups
-            mkdir -p $(dirname {output.multiqc_yaml})
-            touch {output.multiqc_yaml}
-            touch {output.stats_tsv}
-            echo "No replicate groups found, skipping BAM correlation MultiQC conversion" >> {log}
-        fi
-        """
 
 # Rule to convert reproducibility QC JSON files to MultiQC custom content
 rule reproducibility_to_multiqc:
@@ -225,9 +194,6 @@ rule multiqc:
         sample_names_file = os.path.join(result_path, 'report', 'multiqc_sample_names.txt'),
         # Collect prealign stats if enabled (per sample_run, will be averaged per sample in MultiQC)
         prealign_stats = expand(os.path.join(result_path, 'report',"prealigned", '{sample_run}.prealign.stats.tsv'), sample_run=annot.index.tolist()) if has_prealignments else [],
-        # BAM correlation for MultiQC (if replicate groups exist)
-        bam_correlation_yaml = os.path.join(result_path, "report", "bamReproducibility", "bam_correlation_mqc.yaml") if len(replicate_samples) > 0 else [],
-        bam_correlation_stats = os.path.join(result_path, "report", "bamReproducibility", "bam_correlation_stats_mqc.tsv") if len(replicate_samples) > 0 else [],
         # Reproducibility QC for MultiQC (if replicate groups exist)
         reproducibility_yaml = os.path.join(result_path, "report", "reproducibility", "reproducibility_mqc.yaml") if len(replicate_samples) > 0 else [],
         reproducibility_stats = os.path.join(result_path, "report", "reproducibility", "reproducibility_stats_mqc.tsv") if len(replicate_samples) > 0 else [],

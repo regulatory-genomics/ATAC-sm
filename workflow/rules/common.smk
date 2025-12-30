@@ -228,3 +228,136 @@ def validate_replicate_name(wildcards):
             f"    2. At least one replicate group has >1 sample (needed for reproducibility analysis)"
         )
     return []
+
+
+
+# ============================================================================
+# Alignment Parameter Helpers
+# ============================================================================
+
+def get_bowtie2_input_string(wildcards, input):
+    """Generate bowtie2 input string from FASTQ lists."""
+    if samples[wildcards.sample]["read_type"] == "paired" and input.fasta_rev and len(input.fasta_rev) > 0:
+        return f"-1 {','.join(input.fasta_fwd)} -2 {','.join(input.fasta_rev)}"
+    return f"-U {','.join(input.fasta_fwd)}"
+
+def get_bwa_input_string(wildcards, input):
+    """Generate bash process substitution string for BWA-MEM2."""
+    cmd = f"<(cat {' '.join(input.fasta_fwd)})"
+    if samples[wildcards.sample]["read_type"] == "paired" and input.fasta_rev and len(input.fasta_rev) > 0:
+        cmd += f" <(cat {' '.join(input.fasta_rev)})"
+    return cmd
+
+def get_filtering_flags(wildcards):
+    """Generate samtools filtering flags based on read type."""
+    base_flags = f"-q 30 -F {config['filtering']['sam_flag']} -L {config['refs']['whitelist']}"
+    if samples[wildcards.sample]["read_type"] == "paired":
+        return f"{base_flags} -f 2"
+    return base_flags
+
+def get_add_mate_tags(wildcards):
+    """Get samblaster addMateTags flag if paired-end."""
+    return "--addMateTags" if samples[wildcards.sample]["read_type"] == "paired" else ""
+
+def sanitize_bwa_min_score_flag():
+    """Sanitize BWA min_score parameter."""
+    value = config["alignment"]["bwa"].get("min_score")
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.lower() in {"", "null", "none"}:
+            return ""
+        return f"-T {stripped}"
+    return f"-T {value}"
+
+def get_bwa_index_path():
+    """Get BWA-MEM2 index path, falling back to genome FASTA if not set."""
+    index = config["alignment"]["bwa"].get("index")
+    if index and index not in ("", "null", None):
+        return index
+    return config["refs"]["fasta"]
+
+def get_bwa_index_input(wildcards=None):
+    """Get BWA-MEM2 index file dependencies.
+    Accepts wildcards parameter for Snakemake input function compatibility."""
+    if not config["alignment"]["bwa"].get("index") or config["alignment"]["bwa"].get("index") in ("", "null", None):
+        return multiext(config["refs"]["fasta"], ".amb", ".ann", ".bwt", ".pac", ".sa", ".0123", ".alt")
+    return []
+
+def _bwa_mem_mb(wildcards, attempt):
+    """Return memory allocation for bwa alignment based on retry attempt."""
+    if attempt == 1:
+        return 20000  # 20G for first attempt
+    elif attempt == 2:
+        return 40000  # 40G for second attempt
+    else:
+        return 100000  # 100G for third+ attempt
+
+
+# ============================================================================
+# Path Management Helpers
+# ============================================================================
+
+def get_output_dir(subdir):
+    """Centralized path management using Path objects."""
+    return Path(result_path) / subdir
+
+def get_trimmed_fastq_paths(sample_run):
+    """Get trimmed FASTQ paths for a sample_run."""
+    base_dir = get_output_dir("middle_files/trimmed")
+    if annot.loc[sample_run, "read_type"] == "paired":
+        return (
+            str(base_dir / f"{sample_run}_1.fq.gz"),
+            str(base_dir / f"{sample_run}_2.fq.gz"),
+        )
+    return (
+        str(base_dir / f"{sample_run}.fq.gz"),
+        None,
+    )
+
+def get_prealigned_fastq_paths(sample_run):
+    """Get prealigned FASTQ paths for a sample_run."""
+    base_dir = get_output_dir("middle_files/prealigned")
+    return (
+        str(base_dir / f"{sample_run}_prealigned_1.fq.gz"),
+        str(base_dir / f"{sample_run}_prealigned_2.fq.gz"),
+    )
+
+def get_all_trimmed_fastqs_for_sample(sample_name):
+    """Get all trimmed FASTQ files for a sample (all runs)."""
+    sample_runs = get_runs_for_sample(sample_name)
+    r1_files = []
+    r2_files = []
+    for sr in sample_runs:
+        r1_path, r2_path = get_trimmed_fastq_paths(sr)
+        if r1_path:
+            r1_files.append(r1_path)
+        if r2_path:
+            r2_files.append(r2_path)
+    return r1_files, r2_files
+
+def get_all_prealigned_fastqs_for_sample(sample_name):
+    """Get all prealigned FASTQ files for a sample (all runs)."""
+    sample_runs = get_runs_for_sample(sample_name)
+    r1_files = []
+    r2_files = []
+    for sr in sample_runs:
+        r1_path, r2_path = get_prealigned_fastq_paths(sr)
+        if r1_path:
+            r1_files.append(r1_path)
+        if r2_path:
+            r2_files.append(r2_path)
+    return r1_files, r2_files
+
+def get_reads(wildcards, direction=0):
+    """
+    Determines the correct input FASTQs (Trimmed vs Prealigned) based on configuration.
+    direction: 0 for R1, 1 for R2.
+    """
+    sample = wildcards.sample
+    if has_prealignments:
+        files = get_all_prealigned_fastqs_for_sample(sample)
+    else:
+        files = get_all_trimmed_fastqs_for_sample(sample)
+    return files[direction]

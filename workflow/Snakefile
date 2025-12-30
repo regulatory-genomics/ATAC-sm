@@ -24,7 +24,7 @@ report: os.path.join("report", "workflow.rst")
 envs = ["macs2_homer","multiqc","pybedtools","uropa","ggplot","ataqv"]
 
 # load config and sample annotation sheets #####
-configfile: os.path.join("config","config.yaml")
+configfile: os.path.join("config","config_test.yaml")
 validate(config, schema="../schemas/config.schema.yml")
 
 
@@ -100,7 +100,7 @@ if 'passqc' in annot.columns:
 
 # Create a unique identifier for each run: sample_name_run
 annot['sample_name'] = annot['sample_name'].astype(str)
-annot['sample_run'] = annot['sample_name'] + '_' + annot['run'].astype(str)
+annot['sample_run'] = annot['sample_name'] + '_run' + annot['run'].astype(str)
 
 # Validate sample table
 validate(annot, schema="../schemas/samples.schema.yml")
@@ -174,11 +174,6 @@ rule all:
         envs = expand(os.path.join(result_path,'envs','{env}.yaml'),env=envs),
         configs = os.path.join(result_path,'configs','{}_config.yaml'.format(config["project"]["name"])),
         annotations = os.path.join(result_path,'configs','{}_annot.csv'.format(config["project"]["name"])),
-        # GLOBAL REPRODUCIBILITY (deeptools), only if replicate_sample_name is defined
-        reproduciblity_result = expand(
-            os.path.join(result_path, "report", "bamReproducibility", "{sample_rep}_global_rep_cor.txt"),
-            sample_rep=replicate_samples
-        ) if len(replicate_samples) > 0 else [],
         # REPLICATE PSEUDO-REPLICATE PEAKS (IDR/overlap), only if replicate_sample_name is defined
         # Get all samples from all replicate groups
         replicate_peaks_pr = get_all_replicate_peaks_pr() if len(replicate_samples) > 0 else [],

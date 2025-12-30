@@ -62,57 +62,14 @@ rule split_pseudoreplicates_replicate:
         "logs/rules/replicates/split_pseudoreplicates_{replicate}.log"
     shell:
         r"""
-        set -euo pipefail
-
-        prefix="{params.out_dir}/{wildcards.replicate}"
-        tmp_pr1="$prefix.00"
-        tmp_pr2="$prefix.01"
-
-        # Determine random seed
-        if [ "{params.random_seed}" = "0" ]; then
-            random_seed=$(zcat -f {input.tagalign} | wc -c)
-        else
-            random_seed="{params.random_seed}"
-        fi
-
-        if [ "{params.is_paired}" = "True" ]; then
-            # Paired-end: keep pairs together
-            nlines=$(zcat -f {input.tagalign} | wc -l)
-            nlines=$((nlines / 2))
-            nlines=$((nlines / 2 + 1))
-
-            # Each pair = 2 lines. We'll glue them with sed, shuffle, split, and then unglue.
-            # Remove ERR trap to prevent SIGPIPE (exit 141) errors from causing hard failure:
-            set +e
-
-            zcat -f {input.tagalign} | sed 'N;s/\n/\t/' | \
-            shuf --random-source=<(openssl enc -aes-256-ctr -pass pass:$random_seed -nosalt </dev/zero 2>/dev/null) | \
-            split -d -l $nlines - "$prefix."
-
-            set -e
-
-            # Restore paired-end format (convert each tabbed line back to 2 lines)
-            awk -F $'\t' 'NF==12{{printf "%s\t%s\t%s\t%s\t%s\t%s\n%s\t%s\t%s\t%s\t%s\t%s\n",$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12}}' "$tmp_pr1" | gzip -nc > {output.pr1}
-            awk -F $'\t' 'NF==12{{printf "%s\t%s\t%s\t%s\t%s\t%s\n%s\t%s\t%s\t%s\t%s\t%s\n",$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12}}' "$tmp_pr2" | gzip -nc > {output.pr2}
-        else
-            # Single-end
-            nlines=$(zcat -f {input.tagalign} | wc -l)
-            nlines=$((nlines / 2 + 1))
-
-            # Remove ERR trap to prevent SIGPIPE (exit 141) errors from causing hard failure:
-            set +e
-
-            zcat -f {input.tagalign} | \
-            shuf --random-source=<(openssl enc -aes-256-ctr -pass pass:$random_seed -nosalt </dev/zero 2>/dev/null) | \
-            split -d -l $nlines - "$prefix."
-
-            set -e
-
-            gzip -nc "$tmp_pr1" > {output.pr1}
-            gzip -nc "$tmp_pr2" > {output.pr2}
-        fi
-
-        rm -f "$tmp_pr1" "$tmp_pr2"
+        bash workflow/scripts/split_pseudoreplicates.sh \
+            {input.tagalign} \
+            {output.pr1} \
+            {output.pr2} \
+            {wildcards.replicate} \
+            {params.is_paired} \
+            {params.random_seed} \
+            {log}
         """
 
 # Rule 2: Call peaks on individual sample pseudo-replicates (pr1, pr2)
