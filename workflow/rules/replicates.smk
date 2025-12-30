@@ -134,7 +134,7 @@ rule pool_sample_peaks_for_group:
     input:
         peaks = lambda w: [
             os.path.join(result_path, "middle_files", "replicates", sample, f"{sample}.narrowPeak.gz")
-            for sample in get_reproducibility_sample(w.group)
+            for sample in get_samples_for_replicate(w.group)
         ],
     output:
         pooled_peaks = os.path.join(result_path, "middle_files", "replicates", "groups", "{group}", "{group}.pooled-samples.narrowPeak.gz"),
@@ -370,7 +370,28 @@ rule idr_pooled_pseudoreplicates:
 # ============================================================================
 # Note: Individual sample peaks are created by rule call_peaks_individual_sample (Rule 3)
 
+# Helper function to generate unique replicate pairs (always sorted: rep1 < rep2)
+def get_unique_replicate_pairs(group):
+    """
+    Returns list of unique pairs (rep1, rep2) for a group.
+    Enforces rep1 < rep2 lexicographically to ensure unique file paths.
+    """
+    samples = get_samples_for_replicate(group)
+    if len(samples) < 2:
+        return []
+    
+    # Sort samples to ensure deterministic pairing (A vs B, never B vs A)
+    samples = sorted(samples)
+    
+    pairs = []
+    for i in range(len(samples)):
+        for j in range(i + 1, len(samples)):
+            pairs.append((samples[i], samples[j]))
+    
+    return pairs
+
 # Rule 7: IDR between pairs of true replicates
+# Note: This rule assumes rep1 < rep2 lexicographically (enforced upstream via get_unique_replicate_pairs)
 rule idr_true_replicates:
     input:
         pr1_peaks = lambda w: os.path.join(result_path, "middle_files", "replicates", w.rep1, f"{w.rep1}.narrowPeak.gz"),
@@ -405,25 +426,24 @@ rule idr_true_replicates:
 
 # Helper function to get all true replicate pair IDR files for a group
 def get_true_replicate_pair_files(wildcards):
-    """Get list of all true replicate pair IDR files for a given group"""
+    """
+    Get list of all true replicate pair IDR files for a given group.
+    Uses get_unique_replicate_pairs to ensure rep1 < rep2 lexicographically.
+    """
     if wildcards.group not in get_replicate_group_ids():
         return []
     
-    samples_in_group = get_reproducibility_sample(wildcards.group)
-    if len(samples_in_group) < 2:
-        return []
+    # Get sorted pairs (rep1 < rep2)
+    pairs = get_unique_replicate_pairs(wildcards.group)
     
     pair_files = []
-    for i in range(len(samples_in_group)):
-        for j in range(i+1, len(samples_in_group)):
-            rep_i = samples_in_group[i]
-            rep_j = samples_in_group[j]
-            pair_file = os.path.join(
-                result_path, "middle_files", "replicates", "groups", 
-                wildcards.group, "true_replicates", 
-                f"{rep_i}_vs_{rep_j}.idr.narrowPeak.gz"
-            )
-            pair_files.append(pair_file)
+    for rep1, rep2 in pairs:
+        pair_file = os.path.join(
+            result_path, "middle_files", "replicates", "groups", 
+            wildcards.group, "true_replicates", 
+            f"{rep1}_vs_{rep2}.idr.narrowPeak.gz"
+        )
+        pair_files.append(pair_file)
     
     return pair_files
 
@@ -432,7 +452,7 @@ rule reproducibility_qc:
     input:
         peaks_pr = lambda w: [
             os.path.join(result_path, "middle_files", "replicates", rep, f"{rep}-pr1_vs_{rep}-pr2.narrowPeak.gz")
-            for rep in get_reproducibility_sample(w.group)
+            for rep in get_samples_for_replicate(w.group)
         ],
         peak_ppr = lambda w: os.path.join(result_path, "middle_files", "replicates", "groups", w.group, f"{w.group}.pooled-pr1_vs_pooled-pr2.idr.narrowPeak.gz"),
         # Ensure all true replicate pairs exist

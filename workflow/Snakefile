@@ -196,7 +196,6 @@ rule all:
 
 ##### load rules #####
 include: os.path.join("rules", "export.smk")
-include: os.path.join("rules", "resources.smk")
 include: os.path.join("rules", "genome_prepare.smk")
 include: os.path.join("rules", "processing.smk")
 include: os.path.join("rules", "report.smk")

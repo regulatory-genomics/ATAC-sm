@@ -1,5 +1,3 @@
-# annotate consensus regions
-
 # prepare configs for uropa
 rule uropa_prepare:
     input:

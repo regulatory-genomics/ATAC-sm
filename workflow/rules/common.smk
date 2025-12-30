@@ -1,8 +1,11 @@
-# Get runs per sample for merging
+# ============================================================================
+# Core Logic Simplifications
+# ============================================================================
+
 def get_runs_for_sample(sample_name):
     """Get all runs for a given sample name"""
     sample_runs = annot[annot['sample_name'] == sample_name].index.tolist()
-    return sample_runs if len(sample_runs) > 0 else []
+    return sample_runs if sample_runs else []
 
 def get_samples_passing_qc():
     """Get sample names that have at least one run passing QC (passqc=1).
@@ -25,111 +28,110 @@ def get_samples_passing_qc():
     
     return list(passing_samples) if passing_samples else []
 
-
-def get_reproducibility_sample(sample_rep):
-    sample = annot['sample_name'][annot['replicate_sample_name'] == sample_rep].unique().tolist()
-    return sample if len(sample) > 1 else []
+# SIMPLIFIED: Moved nested function out for reusability
+def expand_pep_path(path):
+    """Expand PEP derive modifier paths like raw_data|filename"""
+    if pd.isna(path) or not isinstance(path, str):
+        return path
+    if "|" in path:
+        prefix, filename = path.split("|", 1)
+        # Try config paths
+        if prefix == "raw_data" and "paths" in config and "data_dir" in config["paths"]:
+            return os.path.join(config["paths"]["data_dir"], filename)
+        # Try PEP project config
+        try:
+            sources = pep_project.config.get('sample_modifiers', {}).get('derive', {}).get('sources', {})
+            if prefix in sources:
+                return os.path.join(sources[prefix], filename)
+        except:
+            pass
+    # Ensure absolute path
+    if path and not os.path.isabs(path):
+        return os.path.abspath(path)
+    return path
 
 def get_units_fastqs(wildcards):
     """Get fastq files for a sample_run"""
     u = annot.loc[wildcards.sample_run]
-    fq1 = u["R1"]
-    fq2 = u["R2"]
-    
-    # Handle PEP derive modifier expansion (raw_data| prefix)
-    # PEP should expand this automatically, but if not, expand it manually
-    def expand_pep_path(path):
-        """Expand PEP derive modifier paths like raw_data|filename"""
-        if pd.isna(path) or not isinstance(path, str):
-            return path
-        if "|" in path:
-            prefix, filename = path.split("|", 1)
-            # Try config paths first (already merged from PEP)
-            if prefix == "raw_data" and "paths" in config and "data_dir" in config["paths"]:
-                return os.path.join(config["paths"]["data_dir"], filename)
-            # Fallback: try to get from PEP project config directly
-            try:
-                if 'sample_modifiers' in pep_project.config:
-                    sources = pep_project.config.get('sample_modifiers', {}).get('derive', {}).get('sources', {})
-                    if prefix in sources:
-                        return os.path.join(sources[prefix], filename)
-            except:
-                pass
-        # Ensure absolute path
-        if path and not os.path.isabs(path):
-            return os.path.abspath(path)
-        return path
-    
-    fq1 = expand_pep_path(fq1)
-    fq2 = expand_pep_path(fq2)
-    
-    if pd.isna(fq2):
-        fq2 = None
-    
-    return [fq1, fq2]
+    fq1 = expand_pep_path(u["R1"])
+    fq2 = expand_pep_path(u["R2"])
+    return [fq1, fq2 if not pd.isna(u["R2"]) else None]
+
+# SIMPLIFIED: Consolidated file gathering logic
+def _get_fastqs_for_sample(sample_name, path_func):
+    """Generic helper to gather R1/R2 lists using a specific path function."""
+    runs = get_runs_for_sample(sample_name)
+    r1s, r2s = [], []
+    for run in runs:
+        p1, p2 = path_func(run)
+        if p1:
+            r1s.append(p1)
+        if p2:
+            r2s.append(p2)
+    return r1s, r2s
 
 def get_all_fastqs_for_sample(sample_name):
-    """Get all R1 and R2 fastq files for a sample (all runs combined)"""
-    sample_runs = get_runs_for_sample(sample_name)
-    r1_files = []
-    r2_files = []
-    for sr in sample_runs:
-        u = annot.loc[sr]
-        r1 = u["R1"]
-        if not pd.isna(r1):
-            r1_files.append(str(r1))
-        r2 = u["R2"]
-        if not pd.isna(r2):
-            r2_files.append(str(r2))
-    return r1_files, r2_files
+    """Get all R1 and R2 fastq files for a sample (raw input)."""
+    # Using a lambda to adapt raw data structure to the _get_fastqs_for_sample interface
+    def _raw_path_func(run):
+        u = annot.loc[run]
+        return str(u["R1"]) if not pd.isna(u["R1"]) else None, \
+               str(u["R2"]) if not pd.isna(u["R2"]) else None
+    return _get_fastqs_for_sample(sample_name, _raw_path_func)
 
 def get_quantifications(wildcards):
-    if wildcards.kind=="support":
-        paths = expand(os.path.join(result_path, "downstream_res", "quantification", "{sample}_quantification_support_counts.csv"), sample=samples.keys())
-    elif wildcards.kind=="consensus":
-        paths = expand(os.path.join(result_path, "downstream_res", "quantification", "{sample}_quantification_consensus_counts.csv"), sample=samples.keys())
-    elif wildcards.kind=="promoter":
-        paths = expand(os.path.join(result_path, "downstream_res", "quantification", "{sample}_quantification_promoter_counts.csv"), sample=samples.keys())
-    elif wildcards.kind=="TSS":
-        paths = expand(os.path.join(result_path, "downstream_res", "quantification", "{sample}_quantification_TSS_counts.csv"), sample=samples.keys())
-    else:
-        raise ValueError(f"Unsupported quantification kind '{wildcards.kind}'. Expected one of support, consensus, promoter, TSS.")
-    return paths
+    """Refactored to avoid if/else block"""
+    supported_kinds = ["support", "consensus", "promoter", "TSS"]
+    if wildcards.kind not in supported_kinds:
+        raise ValueError(f"Unsupported kind '{wildcards.kind}'. Expected: {supported_kinds}")
+    
+    return expand(
+        os.path.join(result_path, "downstream_res", "quantification", f"{{sample}}_quantification_{wildcards.kind}_counts.csv"),
+        sample=samples.keys()
+    )
 
 
 
 # ============================================================================
-# Helper Functions
+# Replicate & Group Simplifications
 # ============================================================================
 
-# Helper function to get replicate sample names from annotation
-# Uses replicate_sample_name column to group biological replicates
-def get_replicate_names():
-    """Get list of replicate group names from sample annotation"""
+# SIMPLIFIED: Renamed from get_reproducibility_sample and made main accessor
+def get_samples_for_replicate(replicate_group):
+    """Get list of sample names belonging to a replicate group"""
     if 'replicate_sample_name' not in annot.columns:
         return []
-    # Get unique replicate_sample_name values that have >1 sample
-    all_replicate_names = annot['replicate_sample_name'].dropna().astype(str).unique().tolist()
-    # Only keep replicate names with >1 associated sample
-    replicate_names = [rep for rep in all_replicate_names if len(get_reproducibility_sample(rep)) > 1]
-    return replicate_names
+    samples_list = annot[annot['replicate_sample_name'] == replicate_group]['sample_name'].unique().tolist()
+    return samples_list if len(samples_list) > 1 else []
 
-# Get sample names for a replicate group
-def get_samples_for_replicate(replicate_name):
-    """Get list of sample names belonging to a replicate group"""
-    return get_reproducibility_sample(replicate_name)
+def get_replicate_names():
+    """Get list of valid replicate group names (those with >1 sample)"""
+    if 'replicate_sample_name' not in annot.columns:
+        return []
+    all_groups = annot['replicate_sample_name'].dropna().astype(str).unique()
+    return [g for g in all_groups if len(get_samples_for_replicate(g)) > 1]
 
-# Get BAM files for all samples in a replicate group
+# SIMPLIFIED: Generic function to avoid repeating list comprehensions
+def _get_files_for_group(group_id, pattern):
+    """Generic helper to get files for all samples in a group using a pattern string."""
+    samples_list = get_samples_for_replicate(group_id)
+    return [pattern.format(sample=s, result_path=result_path) for s in samples_list]
+
 def get_replicate_bams(replicate_name):
     """Get BAM file paths for all samples in a replicate group"""
-    sample_names = get_samples_for_replicate(replicate_name)
-    return [os.path.join(result_path, "important_processed", "bam", f"{sample}.filtered.bam") for sample in sample_names]
+    return _get_files_for_group(replicate_name, "{result_path}/important_processed/bam/{sample}.filtered.bam")
 
-# Get tagAlign files for all samples in a replicate group
 def get_replicate_tagaligns(replicate_name):
     """Get tagAlign file paths for all samples in a replicate group"""
-    sample_names = get_samples_for_replicate(replicate_name)
-    return [os.path.join(result_path, "middle_files", "bed", f"{sample}.tagAlign.gz") for sample in sample_names]
+    return _get_files_for_group(replicate_name, "{result_path}/middle_files/bed/{sample}.tagAlign.gz")
+
+def get_group_pr1_tagaligns(group_id):
+    """Get all pr1 tagAlign files for replicates in a group"""
+    return _get_files_for_group(group_id, "{result_path}/middle_files/replicates/{sample}/{sample}.pr1.tagAlign.gz")
+
+def get_group_pr2_tagaligns(group_id):
+    """Get all pr2 tagAlign files for replicates in a group"""
+    return _get_files_for_group(group_id, "{result_path}/middle_files/replicates/{sample}/{sample}.pr2.tagAlign.gz")
 
 # Helper function to get all combined pseudo-replicate peak files
 # Returns list of peak files: [rep1-pr1_vs_rep1-pr2.narrowPeak.gz, rep2-pr1_vs_rep2-pr2.narrowPeak.gz, ...]
@@ -139,7 +141,7 @@ def get_all_replicate_peaks_pr():
     # Get all samples in all replicate groups
     all_samples = []
     for rep in replicate_names:
-        all_samples.extend(get_reproducibility_sample(rep))
+        all_samples.extend(get_samples_for_replicate(rep))
     return [
         os.path.join(result_path, "middle_files", "replicates", sample, f"{sample}-pr1_vs_{sample}-pr2.narrowPeak.gz")
         for sample in all_samples
@@ -153,7 +155,7 @@ def get_replicate_group_ids():
     # Get unique group names where each group has >1 sample
     group_names = []
     for group in annot['replicate_sample_name'].dropna().astype(str).unique():
-        samples_in_group = get_reproducibility_sample(group)
+        samples_in_group = get_samples_for_replicate(group)
         if len(samples_in_group) > 1:
             group_names.append(group)
     return group_names
@@ -161,39 +163,21 @@ def get_replicate_group_ids():
 # Get all pairs of replicates within a group for pairwise comparisons
 def get_replicate_pairs(group_id):
     """Get all pairs (i,j) where i<j within a replicate group"""
-    samples_in_group = get_reproducibility_sample(group_id)
+    samples_in_group = get_samples_for_replicate(group_id)
     pairs = []
     for i in range(len(samples_in_group)):
         for j in range(i+1, len(samples_in_group)):
             pairs.append((samples_in_group[i], samples_in_group[j]))
     return pairs
 
-# Get all pr1 tagAlign files for a group
-def get_group_pr1_tagaligns(group_id):
-    """Get all pr1 tagAlign files for replicates in a group"""
-    samples_in_group = get_reproducibility_sample(group_id)
-    return [
-        os.path.join(result_path, "middle_files", "replicates", sample, f"{sample}.pr1.tagAlign.gz")
-        for sample in samples_in_group
-    ]
-
-# Get all pr2 tagAlign files for a group
-def get_group_pr2_tagaligns(group_id):
-    """Get all pr2 tagAlign files for replicates in a group"""
-    samples_in_group = get_reproducibility_sample(group_id)
-    return [
-        os.path.join(result_path, "middle_files", "replicates", sample, f"{sample}.pr2.tagAlign.gz")
-        for sample in samples_in_group
-    ]
-
 # Determine if paired-end based on first sample in replicate group
 def is_paired_end(replicate_name):
     """Check if replicate is paired-end (based on first sample)"""
-    sample_names = get_samples_for_replicate(replicate_name)
-    if not sample_names:
+    samples_list = get_samples_for_replicate(replicate_name)
+    if not samples_list:
         return False
     # Use first sample's read_type
-    first_sample = sample_names[0]
+    first_sample = samples_list[0]
     return samples[first_sample].get("read_type", "single") == "paired"
 
 # Validation function to check if replicate name is valid
@@ -326,38 +310,18 @@ def get_prealigned_fastq_paths(sample_run):
 
 def get_all_trimmed_fastqs_for_sample(sample_name):
     """Get all trimmed FASTQ files for a sample (all runs)."""
-    sample_runs = get_runs_for_sample(sample_name)
-    r1_files = []
-    r2_files = []
-    for sr in sample_runs:
-        r1_path, r2_path = get_trimmed_fastq_paths(sr)
-        if r1_path:
-            r1_files.append(r1_path)
-        if r2_path:
-            r2_files.append(r2_path)
-    return r1_files, r2_files
+    return _get_fastqs_for_sample(sample_name, get_trimmed_fastq_paths)
 
 def get_all_prealigned_fastqs_for_sample(sample_name):
     """Get all prealigned FASTQ files for a sample (all runs)."""
-    sample_runs = get_runs_for_sample(sample_name)
-    r1_files = []
-    r2_files = []
-    for sr in sample_runs:
-        r1_path, r2_path = get_prealigned_fastq_paths(sr)
-        if r1_path:
-            r1_files.append(r1_path)
-        if r2_path:
-            r2_files.append(r2_path)
-    return r1_files, r2_files
+    return _get_fastqs_for_sample(sample_name, get_prealigned_fastq_paths)
 
 def get_reads(wildcards, direction=0):
     """
-    Determines the correct input FASTQs (Trimmed vs Prealigned) based on configuration.
+    Determines input FASTQs (Trimmed vs Prealigned) based on configuration.
     direction: 0 for R1, 1 for R2.
     """
     sample = wildcards.sample
-    if has_prealignments:
-        files = get_all_prealigned_fastqs_for_sample(sample)
-    else:
-        files = get_all_trimmed_fastqs_for_sample(sample)
+    path_func = get_prealigned_fastq_paths if has_prealignments else get_trimmed_fastq_paths
+    files = _get_fastqs_for_sample(sample, path_func)
     return files[direction]
