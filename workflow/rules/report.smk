@@ -8,74 +8,15 @@ prealignments = config["alignment"].get("prealign", {}).get("indices", []) or []
 has_prealignments = prealign_enabled and len(prealignments) > 0
 
 
-rule collect_align_stats:
-    input:
-        expand(os.path.join(result_path, "report", "align_stats", '{sample}.align.stats.tsv'), 
-                sample=samples.keys())
-    output:
-        report_tsv = os.path.join(result_path, 'report', 'align_stats_report.tsv')
-    resources:
-        mem_mb=config["resources"].get("mem_mb", 1000),
-        runtime = 10
-    threads: config["resources"].get("threads", 1)
-    log:
-        os.path.join("logs", "rules", "collect_align_stats.log")
-    shell:
-        """
-        echo -e "sample\\tmetric\\tvalue" > {output.report_tsv}
-        for stats_file in {input}; do
-            if [ -f "$stats_file" ] && [ -s "$stats_file" ]; then
-                sample=$(basename "$stats_file" .align.stats.tsv)
-                while IFS=$'\\t' read -r metric value || [ -n "$metric" ]; do
-                    # Skip empty lines
-                    [ -z "$metric" ] && continue
-                    echo -e "$sample\\t$metric\\t$value" >> {output.report_tsv}
-                done < "$stats_file"
-            fi
-        done
-        """
-
-
-rule symlink_sample_stats:
-    input:
-        align_stats = os.path.join(result_path, "report", "align_stats", "{sample}.align.stats.tsv"),
-        mapped_log = lambda w: os.path.join(result_path, 'logs',"align", w.sample, f'{w.sample}.{_ALIGNER_LOG_SUFFIX}') if aligner == "bwa-mem2" else os.path.join(result_path, 'logs',"align", f'{w.sample}.{_ALIGNER_LOG_SUFFIX}'),
-        samblaster_log = lambda w: os.path.join(result_path, 'logs', 'align', w.sample, f'{w.sample}.samblaster.log') if aligner == "bwa-mem2" else os.path.join(result_path, 'logs', 'align', f'{w.sample}.samblaster.log'),
-        flagstat_log = os.path.join(result_path, 'logs', 'align', '{sample}.samtools_flagstat.log'),
-    wildcard_constraints:
-        sample="|".join(samples.keys())
-    output:
-        align_stats = os.path.join(result_path, 'report', '{sample}.align.stats.tsv'),
-        mapped_log = os.path.join(result_path, 'report', '{sample}.' + _ALIGNER_LOG_SUFFIX),
-        samblaster_log = os.path.join(result_path, 'report', '{sample}.samblaster.log'),
-        flagstat_log = os.path.join(result_path, 'report', '{sample}.samtools_flagstat.log'),
-    resources:
-        mem_mb=config["resources"].get("mem_mb", 1000),
-        runtime = 10,
-    threads: config["resources"].get("threads", 1)
-    log:
-        os.path.join("logs", "rules", "symlink_sample_stats_{sample}.log")
-    shell:
-        """
-        ln -sfn $(realpath --relative-to=$(dirname {output.align_stats}) {input.align_stats}) {output.align_stats}
-        ln -sfn $(realpath --relative-to=$(dirname {output.mapped_log}) {input.mapped_log}) {output.mapped_log}
-        ln -sfn $(realpath --relative-to=$(dirname {output.samblaster_log}) {input.samblaster_log}) {output.samblaster_log}
-        ln -sfn $(realpath --relative-to=$(dirname {output.flagstat_log}) {input.flagstat_log}) {output.flagstat_log}
-        """
-
 rule symlink_stats:
     input:
-        stats_tsv = os.path.join(result_path, 'report', "peaks_stats", '{sample}.stats.tsv'),
-        tss_csv = os.path.join(result_path, 'report', "tss_coverage", '{sample}.tss_histogram.csv'),
         macs2_log = os.path.join(result_path, 'important_processed', 'peaks', '{sample}.macs2.log'),
         peaks_xls = os.path.join(result_path, 'important_processed', 'peaks', '{sample}_peaks.xls'),
     wildcard_constraints:
         sample="|".join(samples.keys())
     output:
-        stats_tsv = os.path.join(result_path, 'report', '{sample}.stats.tsv'),
-        tss_csv = os.path.join(result_path, 'report', '{sample}_TSS.csv'),
-        macs2_log = os.path.join(result_path, 'report', '{sample}.macs2.log'),
-        peaks_xls = os.path.join(result_path, 'report', '{sample}_peaks.xls'),
+        macs2_log = os.path.join(result_path, 'report', 'peaks', '{sample}.macs2.log'),
+        peaks_xls = os.path.join(result_path, 'report', 'peaks', '{sample}_peaks.xls'),
     resources:
         mem_mb=config["resources"].get("mem_mb", 1000),
         runtime = 10,
@@ -84,8 +25,6 @@ rule symlink_stats:
         os.path.join("logs", "rules", "symlink_stats_{sample}.log")
     shell:
         """
-        ln -sfn $(realpath --relative-to=$(dirname {output.stats_tsv}) {input.stats_tsv}) {output.stats_tsv}
-        ln -sfn $(realpath --relative-to=$(dirname {output.tss_csv}) {input.tss_csv}) {output.tss_csv}
         ln -sfn $(realpath --relative-to=$(dirname {output.macs2_log}) {input.macs2_log}) {output.macs2_log}
         ln -sfn $(realpath --relative-to=$(dirname {output.peaks_xls}) {input.peaks_xls}) {output.peaks_xls}
         """
@@ -181,19 +120,19 @@ rule multiqc:
     input:
         expand(os.path.join(result_path,"important_processed","bam","{sample}.filtered.bam"), sample=samples.keys()),
         expand(os.path.join(result_path,"important_processed","peaks","{sample}_peaks.narrowPeak"), sample=samples.keys()),
-        expand(os.path.join(result_path, 'report', '{sample}_peaks.xls'), sample=samples.keys()), # representing symlinked stats
+        expand(os.path.join(result_path, 'report', 'peaks','{sample}_peaks.xls'), sample=samples.keys()), # representing symlinked stats
         # collect fastp report from all runs (sample_run format)
         expand(os.path.join(result_path, 'report', 'fastp', '{sample_run}_fastp.html'), sample_run=annot.index.tolist()),
         expand(os.path.join(result_path, 'report', 'fastp', '{sample_run}_fastp.json'), sample_run=annot.index.tolist()),
         # Collect per-sample stats and logs for MultiQC
-        expand(os.path.join(result_path, 'report', '{sample}.align.stats.tsv'), sample=samples.keys()),
-        expand(os.path.join(result_path, 'report', '{sample}.' + _ALIGNER_LOG_SUFFIX), sample=samples.keys()),
-        expand(os.path.join(result_path, 'report', '{sample}.samblaster.log'), sample=samples.keys()),
-        expand(os.path.join(result_path, 'report', '{sample}.samtools_flagstat.log'), sample=samples.keys()),
+        expand(os.path.join(result_path, 'report', 'align_stats', '{sample}.align.stats.tsv'), sample=samples.keys()),
+        expand(os.path.join(result_path, 'report', 'align', '{sample}.' + _ALIGNER_LOG_SUFFIX), sample=samples.keys()),
+        expand(os.path.join(result_path, 'report', 'align', '{sample}.samblaster.log'), sample=samples.keys()),
+        expand(os.path.join(result_path, 'report', 'align', '{sample}.samtools_flagstat.log'), sample=samples.keys()),
         sample_annotation = annotation_sheet_path,
         sample_names_file = os.path.join(result_path, 'report', 'multiqc_sample_names.txt'),
-        # Collect prealign stats if enabled (per sample_run, will be averaged per sample in MultiQC)
-        prealign_stats = expand(os.path.join(result_path, 'report',"prealigned", '{sample_run}.prealign.stats.tsv'), sample_run=annot.index.tolist()) if has_prealignments else [],
+        # Collect prealign stats if enabled (per sample, since prealignment now happens at sample level)
+        prealign_stats = expand(os.path.join(result_path, 'report',"prealigned", '{sample}.prealign.stats.tsv'), sample=samples.keys()) if has_prealignments else [],
         # Reproducibility QC for MultiQC (if replicate groups exist)
         reproducibility_yaml = os.path.join(result_path, "report", "reproducibility", "reproducibility_mqc.yaml") if len(replicate_samples) > 0 else [],
         reproducibility_stats = os.path.join(result_path, "report", "reproducibility", "reproducibility_stats_mqc.tsv") if len(replicate_samples) > 0 else [],
@@ -222,27 +161,3 @@ rule multiqc:
         """
         multiqc {params.result_path}/report --force --verbose --outdir {params.result_path}/report --filename multiqc_report.html --replace-names {input.sample_names_file} --cl-config "{params.multiqc_configs}"
         """
-
-# visualize sample annotation (including QC metrics)
-rule plot_sample_annotation:
-    input:
-        sample_annotation = annotation_sheet_path,
-        sample_annotation_w_QC = os.path.join(result_path, "downstream_res", "annotation", "sample_annotation.csv"),
-    output:
-        sample_annotation_plot = os.path.join(result_path,"report","sample_annotation.png"),
-        sample_annotation_html = report(os.path.join(result_path,"report","sample_annotation.html"),
-                       caption="../report/sample_annotation.rst",
-                       category="{}_{}".format(config["project"]["name"], module_name),
-                       subcategory="QC",
-                       labels={
-                           "name": "Sample annotation",
-                           "type": "HTML",
-                           }),
-    log:
-        "logs/rules/plot_sample_annotation.log",
-    resources:
-        mem_mb="4000",
-    conda:
-        "../envs/ggplot.yaml"
-    script:
-        "../scripts/plot_sample_annotation.R"

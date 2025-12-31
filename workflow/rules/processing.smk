@@ -24,19 +24,19 @@ if has_prealignments:
 
     rule prealign_reads:
         input:
-            fq1 = lambda w: get_trimmed_fastq_paths(w.sample_run)[0],
-            fq2 = lambda w: get_trimmed_fastq_paths(w.sample_run)[1] if annot.loc[w.sample_run, "read_type"] == "paired" else [],
+            fq1 = lambda w: get_all_trimmed_fastqs_for_sample(w.sample)[0],
+            fq2 = lambda w: get_all_trimmed_fastqs_for_sample(w.sample)[1],
         wildcard_constraints:
-            sample_run="|".join(annot.index.tolist())
+            sample="|".join(samples.keys())
         output:
-            fq1 = temp(str(get_output_dir("middle_files/prealigned") / "{sample_run}_prealigned_1.fq.gz")),
-            fq2 = temp(str(get_output_dir("middle_files/prealigned") / "{sample_run}_prealigned_2.fq.gz")),
-            stats = str(get_output_dir("report/prealigned") / "{sample_run}.prealign.stats.tsv"),
+            fq1 = temp(str(get_output_dir("middle_files/prealigned") / "{sample}_prealigned_1.fq.gz")),
+            fq2 = temp(str(get_output_dir("middle_files/prealigned") / "{sample}_prealigned_2.fq.gz")),
+            stats = str(get_output_dir("report/prealigned") / "{sample}.prealign.stats.tsv"),
         params:
             prealignments = prealignments,
             aligner = ALIGNER_TOOL,
             prealign_dir = str(get_output_dir("middle_files/prealigned")),
-            is_paired = lambda w: annot.loc[w.sample_run, "read_type"] == "paired",
+            is_paired = lambda w: samples[w.sample].get("read_type", "single") == "paired",
         resources:
             mem_mb = _bwa_mem_mb,
             runtime = 300,
@@ -44,7 +44,7 @@ if has_prealignments:
         conda:
             "../envs/bwa.yaml" if ALIGNER_TOOL == "bwa-mem2" else "../envs/bowtie2.yaml"
         log:
-            "logs/rules/prealign_{sample_run}.log"
+            "logs/rules/prealign_{sample}.log"
         script:
             "../scripts/prealign.py"
 
@@ -65,9 +65,9 @@ if ALIGNER_TOOL == "bowtie2":
         output:
             bam = str(get_output_dir("important_processed/bam") / "{sample}.filtered.bam"),
             bai = str(get_output_dir("important_processed/bam") / "{sample}.filtered.bam.bai"),
-            bowtie_log = str(get_output_dir("logs/align") / "{sample}.bowtie2.log"),
-            bowtie_met = str(get_output_dir("logs/align") / "{sample}.bowtie2.met"),
-            samblaster_log = str(get_output_dir("logs/align") / "{sample}.samblaster.log"),
+            bowtie_log = str(get_output_dir("report/align") / "{sample}.bowtie2.log"),
+            bowtie_met = str(get_output_dir("report/align") / "{sample}.bowtie2.met"),
+            samblaster_log = str(get_output_dir("report/align") / "{sample}.samblaster.log"),
         params:
             sample_name = "{sample}",
             # Wrapped in lambda for safety
@@ -120,8 +120,8 @@ elif ALIGNER_TOOL == "bwa-mem2":
         output:
             bam = str(get_output_dir("important_processed/bam") / "{sample}.filtered.bam"),
             bai = str(get_output_dir("important_processed/bam") / "{sample}.filtered.bam.bai"),
-            bwa_log = str(get_output_dir("logs/align/{sample}") / "{sample}.bwa.log"),
-            samblaster_log = str(get_output_dir("logs/align/{sample}") / "{sample}.samblaster.log"),
+            bwa_log = str(get_output_dir("report/align") / "{sample}.bwa.log"),
+            samblaster_log = str(get_output_dir("report/align") / "{sample}.samblaster.log"),
         params:
             sample_name = "{sample}",
             # Wrapped in lambda for safety
@@ -198,7 +198,7 @@ rule samtools_process:
         bai = str(get_output_dir("important_processed/bam") / "{sample}.filtered.bam.bai"),
     output:
         samtools_log = str(get_output_dir("logs/align") / "{sample}.samtools.log"),
-        samtools_flagstat_log = str(get_output_dir("logs/align") / "{sample}.samtools_flagstat.log"),
+        samtools_flagstat_log = str(get_output_dir("report/align") / "{sample}.samtools_flagstat.log"),
         stats = str(get_output_dir("report/align_stats") / "{sample}.align.stats.tsv"),
     params:
         mitochondria_name = config["refs"].get("mito_name", "chrM"),

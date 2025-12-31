@@ -300,12 +300,12 @@ def get_trimmed_fastq_paths(sample_run):
         None,
     )
 
-def get_prealigned_fastq_paths(sample_run):
-    """Get prealigned FASTQ paths for a sample_run."""
+def get_prealigned_fastq_paths(sample_name):
+    """Get prealigned FASTQ paths for a sample (prealignment happens at sample level, not per-run)."""
     base_dir = get_output_dir("middle_files/prealigned")
     return (
-        str(base_dir / f"{sample_run}_prealigned_1.fq.gz"),
-        str(base_dir / f"{sample_run}_prealigned_2.fq.gz"),
+        str(base_dir / f"{sample_name}_prealigned_1.fq.gz"),
+        str(base_dir / f"{sample_name}_prealigned_2.fq.gz"),
     )
 
 def get_all_trimmed_fastqs_for_sample(sample_name):
@@ -313,8 +313,9 @@ def get_all_trimmed_fastqs_for_sample(sample_name):
     return _get_fastqs_for_sample(sample_name, get_trimmed_fastq_paths)
 
 def get_all_prealigned_fastqs_for_sample(sample_name):
-    """Get all prealigned FASTQ files for a sample (all runs)."""
-    return _get_fastqs_for_sample(sample_name, get_prealigned_fastq_paths)
+    """Get all prealigned FASTQ files for a sample (prealignment happens at sample level, not per-run)."""
+    fq1, fq2 = get_prealigned_fastq_paths(sample_name)
+    return ([fq1], [fq2] if fq2 else [])
 
 def get_reads(wildcards, direction=0):
     """
@@ -322,6 +323,10 @@ def get_reads(wildcards, direction=0):
     direction: 0 for R1, 1 for R2.
     """
     sample = wildcards.sample
-    path_func = get_prealigned_fastq_paths if has_prealignments else get_trimmed_fastq_paths
-    files = _get_fastqs_for_sample(sample, path_func)
+    if has_prealignments:
+        # Prealignment happens at sample level, not per-run
+        files = get_all_prealigned_fastqs_for_sample(sample)
+    else:
+        # Trimmed files are per-run
+        files = get_all_trimmed_fastqs_for_sample(sample)
     return files[direction]

@@ -129,7 +129,7 @@ if 'replicate_sample_name' in annot.columns:
         .tolist()
     )
     # Only keep replicate names with >1 associated sample
-    replicate_samples = [rep for rep in all_replicate_names if len(get_reproducibility_sample(rep)) > 1]
+    replicate_samples = [rep for rep in all_replicate_names if len(get_samples_for_replicate(rep)) > 1]
 else:
     replicate_samples = []
 
@@ -145,8 +145,6 @@ annotation_sheet_path = sample_table_entry if os.path.isabs(sample_table_entry) 
 result_path = config["project"]["out_dir"]
 HOMER_path = os.path.abspath(os.path.join("resources", config["project"]["name"], "HOMER"))
 
-# to deal with rule ambiguity concerning final outputs in counts/
-ruleorder: sample_annotation > quantify_aggregate
 
 # ===================================================
 #                    Rules Section
@@ -155,9 +153,6 @@ rule all:
     input:
         # PROCESSING
         multiqc_report = os.path.join(result_path,"report","multiqc_report.html"),
-        # QUANTIFICATION
-        sample_annotation = os.path.join(result_path, "downstream_res", "annotation", "sample_annotation.csv"),
-        sample_annotation_plot = os.path.join(result_path, "report", "sample_annotation.png"),
         support_counts = os.path.join(result_path,"downstream_res","quantification","support_counts.csv"),
         consensus_counts = os.path.join(result_path,"downstream_res","quantification","consensus_counts.csv"),
         promoter_counts = os.path.join(result_path,"downstream_res","quantification","promoter_counts.csv"),
@@ -169,7 +164,6 @@ rule all:
         # QC - ATAQV
         ataqv_report = os.path.join(result_path, "report", "ataqv_report"),
         # ALIGNMENT STATS REPORT
-        align_stats_report = os.path.join(result_path, "report", "align_stats_report.tsv"),
         # EXPORT environments and configurations
         envs = expand(os.path.join(result_path,'envs','{env}.yaml'),env=envs),
         configs = os.path.join(result_path,'configs','{}_config.yaml'.format(config["project"]["name"])),
