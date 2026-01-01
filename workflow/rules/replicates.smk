@@ -421,7 +421,151 @@ rule idr_true_replicates:
         "../scripts/idr_analysis.sh"
 
 # ============================================================================
-# PHASE 4: Reproducibility QC and Optimal Peak Selection
+# PHASE 4: Replicate Correlation Analysis
+# ============================================================================
+
+# Rule: Merge peaks from all replicates in a group for correlation analysis
+rule merge_group_peaks_for_correlation:
+    input:
+        peaks = lambda w: [
+            os.path.join(result_path, "middle_files", "replicates", sample, f"{sample}.narrowPeak.gz")
+            for sample in get_samples_for_replicate(w.group)
+        ],
+    output:
+        merged_peaks = os.path.join(result_path, "middle_files", "replicates", "groups", "{group}", "{group}.merged_peaks.bed"),
+    params:
+        out_dir = lambda w: os.path.join(result_path, "middle_files", "replicates", "groups", w.group),
+    resources:
+        mem_mb = config["resources"].get("mem_mb", 8000),
+        runtime = 60,
+    threads: 1
+    wildcard_constraints:
+        group = "|".join(get_replicate_group_ids()) if len(get_replicate_group_ids()) > 0 else "NONE_AVAILABLE"
+    conda:
+        "../envs/reproducibility.yaml"
+    log:
+        "logs/rules/replicates/merge_group_peaks_{group}.log"
+    shell:
+        """
+        mkdir -p {params.out_dir}
+        # Concatenate all peaks, extract first 4 columns (chr, start, end, name) to create BED format
+        # Sort and merge overlapping peaks using bedtools merge
+        zcat {input.peaks} | \
+        awk 'BEGIN {{OFS="\\t"}} {{print $1, $2, $3, $4}}' | \
+        sort -k1,1 -k2,2n | \
+        bedtools merge -i - -c 4 -o distinct | \
+        awk 'BEGIN {{OFS="\\t"}} {{print $1, $2, $3, "peak_" NR}}' > {output.merged_peaks}
+        """
+
+# Rule: Calculate correlation between biological replicates based on read counts in group-merged peaks
+rule calculate_replicate_correlation:
+    input:
+        merged_peaks = lambda w: os.path.join(result_path, "middle_files", "replicates", "groups", w.group, f"{w.group}.merged_peaks.bed"),
+        rep1_tagalign = lambda w: os.path.join(result_path, "middle_files", "bed", f"{w.rep1}.tagAlign.gz"),
+        rep2_tagalign = lambda w: os.path.join(result_path, "middle_files", "bed", f"{w.rep2}.tagAlign.gz"),
+    output:
+        tsv = os.path.join(result_path, "middle_files", "replicates", "groups", "{group}", "true_replicates", "{rep1}_vs_{rep2}.correlation.tsv"),
+        png = os.path.join(result_path, "middle_files", "replicates", "groups", "{group}", "true_replicates", "{rep1}_vs_{rep2}.correlation.png"),
+    params:
+        out_dir = lambda w: os.path.join(result_path, "middle_files", "replicates", "groups", w.group, "true_replicates"),
+        script = os.path.join(workflow.basedir, "scripts", "calculate_replicate_correlation.py"),
+    resources:
+        mem_mb = config["resources"].get("mem_mb", 16000),
+        runtime = 300,
+    threads: config["resources"].get("threads", 2)
+    conda:
+        "../envs/reproducibility.yaml"
+    wildcard_constraints:
+        group = "|".join(get_replicate_group_ids()) if len(get_replicate_group_ids()) > 0 else "NONE_AVAILABLE"
+    log:
+        "logs/rules/replicates/correlation_{group}_{rep1}_vs_{rep2}.log"
+    shell:
+        """
+        set -euo pipefail
+        
+        mkdir -p {params.out_dir}
+        
+        # 1. Count reads per peak for Rep1 using bedtools coverage
+        # Sort inputs on-the-fly for bedtools -sorted flag (more efficient)
+        bedtools coverage \
+            -a <(sort -k1,1 -k2,2n {input.merged_peaks}) \
+            -b <(zcat {input.rep1_tagalign} | sort -k1,1 -k2,2n) \
+            -counts \
+            -sorted > rep1_counts.tmp
+        
+        # 2. Count reads per peak for Rep2
+        bedtools coverage \
+            -a <(sort -k1,1 -k2,2n {input.merged_peaks}) \
+            -b <(zcat {input.rep2_tagalign} | sort -k1,1 -k2,2n) \
+            -counts \
+            -sorted > rep2_counts.tmp
+        
+        # 3. Paste results: chr, start, end, name (from rep1), count1, count2
+        # rep1_counts.tmp has: chr, start, end, name, count
+        # rep2_counts.tmp has: chr, start, end, name, count
+        # We want: chr, start, end, name, rep1_count, rep2_count
+        paste <(cut -f 1-4 rep1_counts.tmp) <(cut -f 5 rep1_counts.tmp) <(cut -f 5 rep2_counts.tmp) > joint_counts.tmp
+        
+        # 4. Run Python script to calculate correlation and generate plot
+        python {params.script} \
+            --input joint_counts.tmp \
+            --out-tsv {output.tsv} \
+            --out-png {output.png} 2>> {log}
+        
+        # 5. Clean up temporary files
+        rm -f rep1_counts.tmp rep2_counts.tmp joint_counts.tmp
+        """
+
+# Helper function to get all correlation TSV files for a group
+def get_correlation_pair_files(wildcards):
+    """
+    Get list of all correlation TSV files for a given group.
+    Uses get_unique_replicate_pairs to ensure rep1 < rep2 lexicographically.
+    """
+    if wildcards.group not in get_replicate_group_ids():
+        return []
+    
+    # Get sorted pairs (rep1 < rep2)
+    pairs = get_unique_replicate_pairs(wildcards.group)
+    
+    pair_files = []
+    for rep1, rep2 in pairs:
+        pair_file = os.path.join(
+            result_path, "middle_files", "replicates", "groups", 
+            wildcards.group, "true_replicates", 
+            f"{rep1}_vs_{rep2}.correlation.tsv"
+        )
+        pair_files.append(pair_file)
+    
+    return pair_files
+
+# Rule: Aggregate correlation results for all pairs in a replicate group
+rule aggregate_replicate_correlations:
+    input:
+        correlation_files = lambda w: get_correlation_pair_files(w),
+    output:
+        summary_tsv = os.path.join(result_path, "report", "reproducibility", "{group}.replicate_correlations.tsv"),
+    params:
+        # Pass the specific metadata needed by the script
+        pairs = lambda w: [
+            (rep1, rep2, os.path.join(result_path, "middle_files", "replicates", "groups", w.group, "true_replicates", f"{rep1}_vs_{rep2}.correlation.tsv"))
+            for rep1, rep2 in get_unique_replicate_pairs(w.group)
+        ],
+    resources:
+        mem_mb = 1000,
+        runtime = 10,
+    threads: 1
+    conda:
+        "../envs/reproducibility.yaml"
+    wildcard_constraints:
+        group = "|".join(get_replicate_group_ids()) if len(get_replicate_group_ids()) > 0 else "NONE_AVAILABLE"
+    log:
+        "logs/rules/replicates/aggregate_correlations_{group}.log"
+    script:
+        "../scripts/aggregate_correlations.py"
+
+# ============================================================================
+# PHASE 5: Reproducibility QC and Optimal Peak Selection
 # ============================================================================
 
 # Helper function to get all true replicate pair IDR files for a group
