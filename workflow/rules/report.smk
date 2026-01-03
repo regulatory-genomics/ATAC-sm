@@ -9,7 +9,6 @@ has_prealignments = prealign_enabled and len(prealignments) > 0
 
 rule multiqc:
     input:
-        expand(os.path.join(result_path, 'report', 'peaks','{sample}_peaks.xls'), sample=samples.keys()), # representing symlinked stats
         # collect fastp report from all runs (sample_run format)
         expand(os.path.join(result_path, 'report', 'fastp', '{sample_run}_fastp.html'), sample_run=annot.index.tolist()),
         expand(os.path.join(result_path, 'report', 'fastp', '{sample_run}_fastp.json'), sample_run=annot.index.tolist()),

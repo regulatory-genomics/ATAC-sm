@@ -21,10 +21,10 @@ min_version("8.20.1")
 module_name = "atacseq_pipeline"
 report: os.path.join("report", "workflow.rst")
 # list of names of the used environment specifications in workflow/envs/{env_name}.yaml
-envs = ["macs2_homer","multiqc","pybedtools","uropa","ggplot","ataqv"]
+envs = ["macs2_homer","multiqc","pybedtools","uropa","ataqv"]
 
 # load config and sample annotation sheets #####
-configfile: os.path.join("config","config_test.yaml")
+configfile: os.path.join("config","config.yaml")
 validate(config, schema="../schemas/config.schema.yml")
 
 
