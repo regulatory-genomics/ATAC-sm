@@ -122,9 +122,10 @@ elif ALIGNER_TOOL == "bwa-mem2":
             bai = str(get_output_dir("important_processed/bam") / "{sample}.filtered.bam.bai"),
             bwa_log = str(get_output_dir("report/align") / "{sample}.bwa.log"),
             samblaster_log = str(get_output_dir("report/align") / "{sample}.samblaster.log"),
+            # NEW: This file will contain stats for ALL reads (before filtering)
+            raw_stats = str(get_output_dir("report/align") / "{sample}.samtools_flagstat.log"),
         params:
             sample_name = "{sample}",
-            # Wrapped in lambda for safety
             bwa_input = lambda w, input: get_bwa_input_string(w, input),
             add_mate_tags = get_add_mate_tags,
             sequencing_platform = config["alignment"]["sequencing_platform"],
@@ -133,10 +134,18 @@ elif ALIGNER_TOOL == "bwa-mem2":
             bwa_m_flag = "-M",
             bwa_index_path = get_bwa_index_path(),
             filtering_flags = get_filtering_flags,
+            # OPTIMIZATION PARAMETERS:
+            # 1. Dedicate 4 threads to sorting (prevents the pipe from clogging)
+            sort_threads = 4,
+            # 2. Calculate BWA threads (total threads - 4, minimum 1)
+            # Note: threads variable is available in shell block, calculated there
+            # 3. Give Sort 2GB per thread (Total 8GB buffer). Prevents disk-spilling.
+            sort_mem_per_thread = "2G"
         resources:
-            mem_mb = _bwa_mem_mb,
+            # Ensure this variable covers BWA memory + ~8GB for Sort!
+            mem_mb = _bwa_mem_mb, 
             runtime = 800,
-        threads: 5 * config["resources"].get("threads", 2)
+        threads: 5 * config["resources"].get("threads", 2) # Ensures you have at least ~10 threads
         conda:
             "../envs/bwa.yaml"
         log:
@@ -147,22 +156,38 @@ elif ALIGNER_TOOL == "bwa-mem2":
             
             mkdir -p $(dirname {output.bam}) $(dirname {output.bwa_log})
             result_path=$(dirname {output.bam})
+            
+            # Clean up previous temp files
             find $result_path -type f -name '{wildcards.sample}.filtered.bam.tmp.*' -delete 2>/dev/null || true
-            rm -f "{output.bwa_log}" "{output.samblaster_log}" 2>/dev/null || true
+            rm -f "{output.bwa_log}" "{output.samblaster_log}" "{output.raw_stats}" 2>/dev/null || true
             
             RG="@RG\\tID:{wildcards.sample}\\tSM:{params.sample_name}\\tPL:{params.sequencing_platform}"
+            
+            # Calculate BWA threads (total threads - sort threads, minimum 1)
+            BWA_THREADS=$(( {threads} - {params.sort_threads} ))
+            if [ $BWA_THREADS -lt 1 ]; then
+                BWA_THREADS=1
+            fi
+            
+            # PIPELINE EXPLANATION:
+            # 1. bwa-mem2: Uses BWA_THREADS (calculated above)
+            # 2. samblaster: Marks duplicates
+            # 3. tee: Splits stream -> saves RAW stats to {output.raw_stats}
+            # 4. view: Filters reads (e.g. removes unmapped)
+            # 5. sort: Uses {params.sort_threads} and {params.sort_mem_per_thread}
             
             bwa-mem2 mem \
                 {params.bwa_args} \
                 {params.bwa_m_flag} \
                 {params.bwa_min_score_flag} \
                 -R "$RG" \
-                -t {threads} \
+                -t $BWA_THREADS \
                 {params.bwa_index_path} \
                 {params.bwa_input} 2> {output.bwa_log} | \
             samblaster {params.add_mate_tags} 2> {output.samblaster_log} | \
+            tee >(samtools flagstat - > {output.raw_stats}) | \
             samtools view {params.filtering_flags} -bhS - 2>> {output.bwa_log} | \
-            samtools sort -o {output.bam} - 2>> {output.bwa_log}
+            samtools sort -@ {params.sort_threads} -m {params.sort_mem_per_thread} -o {output.bam} - 2>> {output.bwa_log}
             
             samtools index "{output.bam}" 2>> "{output.bwa_log}"
             """
@@ -198,7 +223,6 @@ rule samtools_process:
         bai = str(get_output_dir("important_processed/bam") / "{sample}.filtered.bam.bai"),
     output:
         samtools_log = str(get_output_dir("logs/align") / "{sample}.samtools.log"),
-        samtools_flagstat_log = str(get_output_dir("report/align") / "{sample}.samtools_flagstat.log"),
         stats = str(get_output_dir("report/align_stats") / "{sample}.align.stats.tsv"),
     params:
         mitochondria_name = config["refs"].get("mito_name", "chrM"),
@@ -223,8 +247,6 @@ rule samtools_process:
         }}END{{ 
             print "mitochondrial_fraction\\t"mito_count/sum 
         }}' > "{output.stats}" 2>> "{output.samtools_log}"
-        
-        samtools flagstat "{input.bam}" > "{output.samtools_flagstat_log}" 2>> "{output.samtools_log}"
         """
 
 # ============================================================================

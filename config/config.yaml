@@ -3,9 +3,7 @@ project:
   name: macrophage_atac
   genome: hg38
   # Output directory (can use {process_dir} placeholder from PEP)
-  out_dir: "{process_dir}/20260103_ATAC_run"
-  # Sample sheet / Annotation file (managed by PEP)
-  samples: ../config/20260103_sample.csv
+  out_dir: "{process_dir}/20260105_ATAC_1819"
   pep_config: ../pep/project_config.yaml
   read_type : paired # If you have mixed read_type, you should specify in your sample sheet.
 

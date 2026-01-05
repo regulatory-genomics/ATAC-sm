@@ -470,7 +470,7 @@ rule calculate_replicate_correlation:
         out_dir = lambda w: os.path.join(result_path, "middle_files", "replicates", "groups", w.group, "true_replicates"),
         script = os.path.join(workflow.basedir, "scripts", "calculate_replicate_correlation.py"),
     resources:
-        mem_mb = config["resources"].get("mem_mb", 16000),
+        mem_mb = 5 * config["resources"].get("mem_mb", 16000),
         runtime = 300,
     threads: config["resources"].get("threads", 2)
     conda:
@@ -482,39 +482,149 @@ rule calculate_replicate_correlation:
     shell:
         """
         set -euo pipefail
-        
+
+        echo "========================================" >> {log}
+        echo "Starting correlation calculation for {wildcards.rep1} vs {wildcards.rep2}" >> {log}
+        echo "Group: {wildcards.group}" >> {log}
+        echo "========================================" >> {log}
+
         mkdir -p {params.out_dir}
-        
+
+        # Debug: Check input files exist and have content
+        echo "" >> {log}
+        echo "--- Step 0: Input file validation ---" >> {log}
+        echo "Merged peaks file: {input.merged_peaks}" >> {log}
+        if [ -f "{input.merged_peaks}" ]; then
+            PEAK_COUNT=$(wc -l < "{input.merged_peaks}" || echo "0")
+            echo "  Merged peaks: $PEAK_COUNT lines" >> {log}
+            echo "  First 3 lines:" >> {log}
+            head -3 "{input.merged_peaks}" >> {log} 2>&1 || echo "  (empty or unreadable)" >> {log}
+        else
+            echo "  ERROR: Merged peaks file not found!" >> {log}
+            exit 1
+        fi
+
+        echo "Rep1 tagAlign: {input.rep1_tagalign}" >> {log}
+        if [ -f "{input.rep1_tagalign}" ]; then
+            REP1_LINES=$(zcat "{input.rep1_tagalign}" | wc -l || echo "0")
+            echo "  Rep1 tagAlign: $REP1_LINES lines" >> {log}
+        else
+            echo "  ERROR: Rep1 tagAlign file not found!" >> {log}
+            exit 1
+        fi
+
+        echo "Rep2 tagAlign: {input.rep2_tagalign}" >> {log}
+        if [ -f "{input.rep2_tagalign}" ]; then
+            REP2_LINES=$(zcat "{input.rep2_tagalign}" | wc -l || echo "0")
+            echo "  Rep2 tagAlign: $REP2_LINES lines" >> {log}
+        else
+            echo "  ERROR: Rep2 tagAlign file not found!" >> {log}
+            exit 1
+        fi
+
         # 1. Count reads per peak for Rep1 using bedtools coverage
-        # Sort inputs on-the-fly for bedtools -sorted flag (more efficient)
+        # CHANGED: Removed -sorted flag and on-the-fly sorting.
+        # Bedtools will load the small 'merged_peaks' file into memory and stream the large 'tagAlign'.
+        echo "" >> {log}
+        echo "--- Step 1: Counting reads for Rep1 ---" >> {log}
         bedtools coverage \
-            -a <(sort -k1,1 -k2,2n {input.merged_peaks}) \
-            -b <(zcat {input.rep1_tagalign} | sort -k1,1 -k2,2n) \
-            -counts \
-            -sorted > rep1_counts.tmp
-        
+            -a {input.merged_peaks} \
+            -b {input.rep1_tagalign} \
+            -counts > rep1_counts.tmp 2>> {log}
+
+        if [ ! -s rep1_counts.tmp ]; then
+            echo "  ERROR: bedtools coverage produced empty output for Rep1" >> {log}
+            exit 1
+        fi
+        REP1_COUNT_LINES=$(wc -l < rep1_counts.tmp || echo "0")
+        REP1_TOTAL=$(awk '{{sum += $5}} END {{print sum+0}}' rep1_counts.tmp || echo "0")
+        echo "  Rep1 counts: $REP1_COUNT_LINES peaks, total reads: $REP1_TOTAL" >> {log}
+        echo "  First 3 lines of rep1_counts.tmp:" >> {log}
+        head -3 rep1_counts.tmp >> {log} 2>&1
+
         # 2. Count reads per peak for Rep2
+        # CHANGED: Removed -sorted flag and on-the-fly sorting.
+        echo "" >> {log}
+        echo "--- Step 2: Counting reads for Rep2 ---" >> {log}
         bedtools coverage \
-            -a <(sort -k1,1 -k2,2n {input.merged_peaks}) \
-            -b <(zcat {input.rep2_tagalign} | sort -k1,1 -k2,2n) \
-            -counts \
-            -sorted > rep2_counts.tmp
-        
+            -a {input.merged_peaks} \
+            -b {input.rep2_tagalign} \
+            -counts > rep2_counts.tmp 2>> {log}
+
+        if [ ! -s rep2_counts.tmp ]; then
+            echo "  ERROR: bedtools coverage produced empty output for Rep2" >> {log}
+            exit 1
+        fi
+        REP2_COUNT_LINES=$(wc -l < rep2_counts.tmp || echo "0")
+        REP2_TOTAL=$(awk '{{sum += $5}} END {{print sum+0}}' rep2_counts.tmp || echo "0")
+        echo "  Rep2 counts: $REP2_COUNT_LINES peaks, total reads: $REP2_TOTAL" >> {log}
+        echo "  First 3 lines of rep2_counts.tmp:" >> {log}
+        head -3 rep2_counts.tmp >> {log} 2>&1
+
+        # Validate that both count files have the same number of lines
+        if [ "$REP1_COUNT_LINES" -ne "$REP2_COUNT_LINES" ]; then
+            echo "  WARNING: Rep1 and Rep2 have different number of peaks ($REP1_COUNT_LINES vs $REP2_COUNT_LINES)" >> {log}
+        fi
+
         # 3. Paste results: chr, start, end, name (from rep1), count1, count2
+        echo "" >> {log}
+        echo "--- Step 3: Combining count files ---" >> {log}
         # rep1_counts.tmp has: chr, start, end, name, count
         # rep2_counts.tmp has: chr, start, end, name, count
         # We want: chr, start, end, name, rep1_count, rep2_count
-        paste <(cut -f 1-4 rep1_counts.tmp) <(cut -f 5 rep1_counts.tmp) <(cut -f 5 rep2_counts.tmp) > joint_counts.tmp
-        
+        paste <(cut -f 1-4 rep1_counts.tmp) <(cut -f 5 rep1_counts.tmp) <(cut -f 5 rep2_counts.tmp) > joint_counts.tmp 2>> {log}
+
+        if [ ! -s joint_counts.tmp ]; then
+            echo "  ERROR: paste command produced empty output" >> {log}
+            exit 1
+        fi
+        JOINT_LINES=$(wc -l < joint_counts.tmp || echo "0")
+        echo "  Joint counts: $JOINT_LINES lines" >> {log}
+        echo "  First 3 lines of joint_counts.tmp:" >> {log}
+        head -3 joint_counts.tmp >> {log} 2>&1
+
         # 4. Run Python script to calculate correlation and generate plot
+        echo "" >> {log}
+        echo "--- Step 4: Running Python correlation script ---" >> {log}
+        echo "  Input: joint_counts.tmp ($JOINT_LINES lines)" >> {log}
+        echo "  Output TSV: {output.tsv}" >> {log}
+        echo "  Output PNG: {output.png}" >> {log}
         python {params.script} \
             --input joint_counts.tmp \
             --out-tsv {output.tsv} \
             --out-png {output.png} 2>> {log}
-        
+
+        # Verify outputs were created
+        echo "" >> {log}
+        echo "--- Step 5: Verifying outputs ---" >> {log}
+        if [ -f "{output.tsv}" ]; then
+            TSV_SIZE=$(wc -l < "{output.tsv}" || echo "0")
+            echo "  TSV file created: $TSV_SIZE lines" >> {log}
+            cat "{output.tsv}" >> {log} 2>&1 || echo "  (could not read TSV)" >> {log}
+        else
+            echo "  ERROR: TSV output file not created!" >> {log}
+            exit 1
+        fi
+
+        if [ -f "{output.png}" ]; then
+            PNG_SIZE=$(stat -c%s "{output.png}" 2>/dev/null || stat -f%z "{output.png}" 2>/dev/null || echo "0")
+            echo "  PNG file created: $PNG_SIZE bytes" >> {log}
+        else
+            echo "  ERROR: PNG output file not created!" >> {log}
+            exit 1
+        fi
+
         # 5. Clean up temporary files
+        echo "" >> {log}
+        echo "--- Step 6: Cleaning up temporary files ---" >> {log}
         rm -f rep1_counts.tmp rep2_counts.tmp joint_counts.tmp
+        echo "  Temporary files removed" >> {log}
+
+        echo "" >> {log}
+        echo "Correlation calculation completed successfully" >> {log}
+        echo "========================================" >> {log}
         """
+
 
 # Helper function to get all correlation TSV files for a group
 def get_correlation_pair_files(wildcards):

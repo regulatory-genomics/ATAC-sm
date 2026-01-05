@@ -11,8 +11,7 @@ properties:
       name: {type: string}
       genome: {type: string}
       out_dir: {type: string}
-      samples: {type: string}
-    required: [name, genome, out_dir, samples]
+    required: [name, genome, out_dir]
 
 # 2. RESOURCES
   resources:

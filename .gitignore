@@ -144,3 +144,5 @@ config/anno*
 *sample.csv
 
 workflow/docs/
+batch*.csv
+*test.csv

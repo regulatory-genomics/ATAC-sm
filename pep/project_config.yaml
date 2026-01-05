@@ -1,7 +1,7 @@
 pep_version: "2.0.0"
 project_name: macrophage_atac
 description: "PEP definition for the ATAC-seq workflow."
-sample_table: ../config/20251216_sample.csv
+sample_table: ../config/batch_18-19.csv
 
 # Project-level path variables
 # These paths can be accessed via pep_project.config in Snakefile
